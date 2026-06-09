@@ -428,7 +428,8 @@ def _s3_client():
     secret_access_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
     session_token = os.environ.get("AWS_SESSION_TOKEN")
 
-    kwargs: dict[str, Any] = {"region_name": os.environ.get("AWS_REGION", "us-west-2")}
+    region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION", "us-west-2")
+    kwargs: dict[str, Any] = {"region_name": region}
     if access_key_id and secret_access_key:
         kwargs["aws_access_key_id"] = access_key_id
         kwargs["aws_secret_access_key"] = secret_access_key

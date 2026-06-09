@@ -32,6 +32,15 @@ def gateway_api_key(explicit: str | None = None) -> str | None:
     )
 
 
+def gateway_base_url(explicit: str | None = None) -> str:
+    return (
+        explicit
+        or os.environ.get("VECTORFORGE_AI_GATEWAY_BASE_URL")
+        or os.environ.get("AI_GATEWAY_BASE_URL")
+        or AI_GATEWAY_BASE_URL
+    )
+
+
 def openai_api_key(explicit: str | None = None) -> str | None:
     return (
         explicit
@@ -157,15 +166,16 @@ def require_gateway_api_key(explicit: str | None = None, context: str = "LLM cal
 
 def configure_ai_gateway_environment() -> None:
     api_key = require_gateway_api_key(context="AI Gateway environment")
+    base_url = gateway_base_url()
     os.environ["OPENAI_API_KEY"] = api_key
-    os.environ["OPENAI_BASE_URL"] = AI_GATEWAY_BASE_URL
-    os.environ["OPENAI_API_BASE"] = AI_GATEWAY_BASE_URL
+    os.environ["OPENAI_BASE_URL"] = base_url
+    os.environ["OPENAI_API_BASE"] = base_url
 
 
 def openai_client(api_key: str | None = None, *, ssl_verify: bool = False) -> OpenAI:
     return OpenAI(
         api_key=require_gateway_api_key(api_key, "AI Gateway client"),
-        base_url=AI_GATEWAY_BASE_URL,
+        base_url=gateway_base_url(),
         http_client=httpx.Client(verify=ssl_verify),
     )
 
@@ -173,7 +183,7 @@ def openai_client(api_key: str | None = None, *, ssl_verify: bool = False) -> Op
 def async_openai_client(api_key: str | None = None, *, ssl_verify: bool = False) -> AsyncOpenAI:
     return AsyncOpenAI(
         api_key=require_gateway_api_key(api_key, "AI Gateway async client"),
-        base_url=AI_GATEWAY_BASE_URL,
+        base_url=gateway_base_url(),
         http_client=httpx.AsyncClient(verify=ssl_verify),
     )
 

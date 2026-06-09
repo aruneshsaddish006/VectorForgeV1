@@ -2945,21 +2945,6 @@ wheels = [
 ]
 
 [[package]]
-name = "opensandbox"
-version = "0.1.10"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "attrs" },
-    { name = "httpx" },
-    { name = "pydantic" },
-    { name = "python-dateutil" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/6d/8f/029f87db2052ce9c4c339851e856e27fc9f79261ff766def0387f0316331/opensandbox-0.1.10.tar.gz", hash = "sha256:07f922475b0a16788917c4ce1331939b2e178529fb7c3bf260978a8c8fdab16a", size = 167245, upload-time = "2026-06-08T09:43:08.917Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/57/3b/e75b522f7b061ef8935be67b52314c44b095b7e2da2d12995640d7199be3/opensandbox-0.1.10-py3-none-any.whl", hash = "sha256:d267402fc1e7f8b92a3ae4d70b41e3a140ce9902b969251c0a19a9e65b99e784", size = 370491, upload-time = "2026-06-08T09:43:07.269Z" },
-]
-
-[[package]]
 name = "opensandbox-server"
 version = "0.1.14"
 source = { registry = "https://pypi.org/simple" }
@@ -4717,7 +4702,6 @@ dependencies = [
     { name = "langgraph" },
     { name = "lightgbm" },
     { name = "openai" },
-    { name = "opensandbox" },
     { name = "pandas" },
     { name = "pdfplumber" },
     { name = "pydantic-settings" },
@@ -4800,7 +4784,6 @@ requires-dist = [
     { name = "lightgbm", marker = "extra == 'all'", specifier = ">=4.6.0" },
     { name = "lightgbm", marker = "extra == 'trad-ml'", specifier = ">=4.6.0" },
     { name = "openai", specifier = ">=2.38.0" },
-    { name = "opensandbox", specifier = ">=0.1.0" },
     { name = "opensandbox-server", marker = "extra == 'sandbox-server'", specifier = ">=0.1.14" },
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "pdfplumber", specifier = ">=0.11.9" },
