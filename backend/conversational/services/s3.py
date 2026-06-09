@@ -6,12 +6,15 @@ Upload pattern (interrupt/resume):
 1. Graph interrupts asking user to choose a dataset source
 2. User picks "upload" — API receives file on POST /conversations/{id}/upload-dataset
 3. upload_dataset() uploads bytes to S3 and returns the s3_path
-4. API resumes graph: Command(resume={choice: "upload", s3_path: "s3://..."})
+4. API resumes graph: Command(resume={s3_path: "s3://..."})
+
+S3 key layout: {session_id}/{prob-name-slug}/{filename}
 """
 
 from __future__ import annotations
 
 import io
+import re
 
 import boto3
 from botocore.exceptions import ClientError
@@ -31,22 +34,35 @@ def _get_s3_client():
     return boto3.client("s3", **kwargs)
 
 
+def _slugify(name: str) -> str:
+    """Convert a problem name to a safe S3 key segment.
+
+    "Subscriber Churn Prediction (Binary)" -> "subscriber-churn-prediction-binary"
+    """
+    slug = name.lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", slug)
+    return slug.strip("-") or "dataset"
+
+
 async def upload_dataset(
     session_id: str,
     prob_id: str,
     filename: str,
     data: bytes,
     content_type: str = "text/csv",
+    prob_name: str = "",
 ) -> str:
     """Upload a dataset file to S3 and return the s3:// URI.
 
-    S3 key: {session_id}/{prob_id}/{filename}
+    S3 key: {session_id}/{prob-name-slug}/{filename}
+    Falls back to prob_id when prob_name is empty.
 
     Returns:
-        "s3://{bucket}/{session_id}/{prob_id}/{filename}"
+        "s3://{bucket}/{session_id}/{prob-name-slug}/{filename}"
     """
     bucket = get_settings().s3_bucket_name
-    key = f"{session_id}/{prob_id}/{filename}"
+    folder = _slugify(prob_name) if prob_name else prob_id
+    key = f"{session_id}/{folder}/{filename}"
 
     s3 = _get_s3_client()
     s3.upload_fileobj(

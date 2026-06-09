@@ -143,7 +143,7 @@ async def intake_node(state: ConversationalState) -> dict:
 
     interrupt(
         {
-            "type": InterruptType.CLARIFICATION,
+            "type": InterruptType.CLARIFICATION.value,
             "message": result.get("agent_summary", "A few quick questions:"),
             "questions": result["clarifying_questions"],
             "missing_fields": result.get("missing_fields", []),

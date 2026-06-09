@@ -43,7 +43,7 @@ async def output_compiler_node(state: ConversationalState) -> dict:
 
     review_resume = interrupt(
         {
-            "type": InterruptType.FINAL_REVIEW,
+            "type": InterruptType.FINAL_REVIEW.value,
             "message": (
                 f"I've mapped **{len(experiments)} ML problem(s)** with dataset sources. "
                 "Review the plan below and confirm to finalise, or ask me to adjust."

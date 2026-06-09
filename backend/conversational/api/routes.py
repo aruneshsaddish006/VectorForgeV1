@@ -177,6 +177,10 @@ async def respond_to_interrupt(
                 stream_mode="updates",
             ):
                 for node_name, update in chunk.items():
+                    # LangGraph emits {'__interrupt__': (Interrupt(...),)} when a node
+                    # calls interrupt() — the value is a tuple, not a state delta dict.
+                    if not isinstance(update, dict):
+                        continue
                     if update.get("status"):
                         yield f"data: {json.dumps({'type': 'status', 'status': update['status'], 'node': node_name})}\n\n"
                     for msg in update.get("messages", []):
@@ -187,19 +191,22 @@ async def respond_to_interrupt(
             return
 
         # Graph paused at interrupt or completed — emit final snapshot
-        final_snap = await graph.aget_state(config)
-        if final_snap is None:
-            yield f"data: {json.dumps({'type': 'error', 'detail': 'Session state lost after streaming.'})}\n\n"
-            return
+        try:
+            final_snap = await graph.aget_state(config)
+            if final_snap is None:
+                yield f"data: {json.dumps({'type': 'error', 'detail': 'Session state lost after streaming.'})}\n\n"
+                return
 
-        state_vals = final_snap.values
-        interrupt_payload = _extract_interrupt(final_snap)
-        final_output = state_vals.get("final_output")
+            state_vals = final_snap.values
+            interrupt_payload = _extract_interrupt(final_snap)
+            final_output = state_vals.get("final_output")
 
-        if state_vals.get("status") == "complete" and final_output:
-            await write_session_output(session_id, final_output)
+            if state_vals.get("status") == "complete" and final_output:
+                await write_session_output(session_id, final_output)
 
-        yield f"data: {json.dumps({'type': 'complete', 'data': {'session_id': session_id, 'status': state_vals.get('status', 'unknown'), 'interrupt': interrupt_payload, 'messages': state_vals.get('messages', []), 'final_output': final_output}})}\n\n"
+            yield f"data: {json.dumps({'type': 'complete', 'data': {'session_id': session_id, 'status': state_vals.get('status', 'unknown'), 'interrupt': interrupt_payload, 'messages': state_vals.get('messages', []), 'final_output': final_output}})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'detail': f'Failed to emit final state: {exc}' })}\n\n"
 
     return StreamingResponse(
         event_stream(),
@@ -220,8 +227,9 @@ async def upload_dataset_endpoint(
 ) -> dict[str, Any]:
     """Upload a dataset file for a specific ML sub-problem.
 
-    Stores the file in S3 and resumes the dataset_sourcing_node with the
-    resulting S3 path so the graph can proceed to column confirmation.
+    Stores the file in S3 under session_id/<prob-name-slug>/filename, then
+    resumes the graph.  Schema confirmation is auto-accepted for uploads so
+    the graph advances directly to the next sub-problem's dataset prompt.
     """
     graph = _graph(request)
     config = thread_config(session_id)
@@ -229,6 +237,11 @@ async def upload_dataset_endpoint(
     snapshot = await graph.aget_state(config)
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Session not found.")
+
+    # Look up the human-readable problem name for a clean S3 key.
+    ml_problems: list[dict] = snapshot.values.get("ml_sub_problems") or []
+    prob = next((p for p in ml_problems if p.get("id") == problem_id), None)
+    prob_name: str = prob.get("name", "") if prob else ""
 
     file_data = await file.read()
     filename = file.filename or "dataset.csv"
@@ -241,6 +254,7 @@ async def upload_dataset_endpoint(
             filename=filename,
             data=file_data,
             content_type=content_type,
+            prob_name=prob_name,
         )
     except Exception as exc:
         raise HTTPException(
@@ -248,12 +262,13 @@ async def upload_dataset_endpoint(
             detail=f"S3 upload failed: {exc}",
         )
 
-    resume_payload = {
-        "s3_path": s3_path,
-        "prob_id": problem_id,
-        "filename": filename,
-    }
-    await graph.ainvoke(Command(resume=resume_payload), config=config)
+    # Resume the AWAITING_UPLOAD interrupt with the S3 path.
+    # dataset_sourcing_node will auto-confirm the schema for uploads and
+    # advance to the next sub-problem (or output compilation).
+    await graph.ainvoke(
+        Command(resume={"s3_path": s3_path, "prob_id": problem_id, "filename": filename}),
+        config=config,
+    )
 
     return {
         "data": UploadDatasetResponse(

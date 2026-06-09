@@ -64,7 +64,7 @@ async def dataset_sourcing_node(state: ConversationalState) -> dict:
 
         choice_resume = interrupt(
             {
-                "type": InterruptType.DATASET_SOURCE_CHOICE,
+                "type": InterruptType.DATASET_SOURCE_CHOICE.value,
                 "problem_id": prob_id,
                 "problem_name": prob_name,
                 "engine": engine,
@@ -109,7 +109,7 @@ async def dataset_sourcing_node(state: ConversationalState) -> dict:
     if phase == "upload":
         upload_resume = interrupt(
             {
-                "type": InterruptType.AWAITING_UPLOAD,
+                "type": InterruptType.AWAITING_UPLOAD.value,
                 "problem_id": prob_id,
                 "problem_name": prob_name,
                 "engine": engine,
@@ -146,7 +146,7 @@ async def dataset_sourcing_node(state: ConversationalState) -> dict:
 
         pick_resume = interrupt(
             {
-                "type": InterruptType.EXA_RESULTS_REVIEW,
+                "type": InterruptType.EXA_RESULTS_REVIEW.value,
                 "problem_id": prob_id,
                 "problem_name": prob_name,
                 "search_query": query,
@@ -193,7 +193,7 @@ async def dataset_sourcing_node(state: ConversationalState) -> dict:
         if inferred_columns:
             schema_resume = interrupt(
                 {
-                    "type": InterruptType.SCHEMA_CONFIRMATION,
+                    "type": InterruptType.SCHEMA_CONFIRMATION.value,
                     "problem_id": prob_id,
                     "problem_name": prob_name,
                     "message": (

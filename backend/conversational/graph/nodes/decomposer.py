@@ -83,6 +83,21 @@ COLUMN INFERENCE RULES:
 - rag_question_answering:       infer corpus doc_id/contents + qa qid/query/retrieval_gt/generation_gt
 - rag_document_retrieval:       infer corpus doc_id/contents + queries qid/query/retrieval_gt
 
+DUAL-ENGINE DECOMPOSITION STRATEGY:
+Many real-world business problems contain BOTH a predictive (traditional ML) need
+AND a knowledge retrieval / Q&A (GenAI/RAG) need. When the context mentions any
+combination of the following, always extract BOTH sub-problems:
+  • A churn/risk/conversion prediction → binary_classification (AutoGluon)
+    + support docs / knowledge base / CS team Q&A → rag_question_answering (AutoRAG)
+  • A demand forecast / sales prediction (AutoGluon)
+    + product catalogue search / policy lookup → rag_document_retrieval (AutoRAG)
+  • Any structured prediction task (AutoGluon)
+    + any mention of "questions", "documents", "knowledge base", "FAQ", "reports",
+      "find answers", "search documentation" → appropriate RAG type (AutoRAG)
+
+When a user explicitly mentions both a CSV/tabular dataset AND PDF/document corpus,
+always produce one AutoGluon sub-problem and one AutoRAG sub-problem.
+
 Output 1–4 sub-problems maximum. The constraint_narrative must be a complete
 paragraph a downstream orchestrator can use directly."""
 
@@ -218,7 +233,7 @@ async def decomposer_node(state: ConversationalState) -> dict:
 
     interrupt(
         {
-            "type": InterruptType.SUB_PROBLEM_CONFIRMATION,
+            "type": InterruptType.SUB_PROBLEM_CONFIRMATION.value,
             "message": result.get("agent_summary", "Here are the ML sub-problems I identified."),
             "data": card_data,
             "options": ["confirm", "adjust"],
