@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, type ElementType } from "react"
+import { Cpu, Database, Rocket, ShieldCheck } from "lucide-react"
 import { UserMessage, AgentMessage, SystemCardSlot } from "./messages"
 import { Composer } from "./composer"
 import { StrategyCard } from "@/components/cards/strategy-card"
@@ -71,18 +72,37 @@ export function ChatThread({
 
   return (
     <div className="relative flex h-full flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6 sm:px-6">
-          {/* Day divider */}
+      <div className="scroll-thin min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+          <section className="app-panel-raised overflow-hidden rounded-[28px] p-6 sm:p-8">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-muted-foreground">Welcome back</p>
+                <h1 className="mt-2 font-heading text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+                  {selectedProject.name}
+                </h1>
+                <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">
+                  {selectedWorkspace.name} brings data sourcing, model search, retrieval, approvals, and deployment into one guided AI product workflow.
+                </p>
+              </div>
+              <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-4 lg:w-[440px]">
+                <Metric icon={Database} label="Dataset" value={assets?.dataset?.rowCount ? `${assets.dataset.rowCount}` : "4,820"} />
+                <Metric icon={Cpu} label="Best AUC" value={assets?.training?.metrics.bestRocAuc || "0.921"} />
+                <Metric icon={ShieldCheck} label="Status" value="Approval" />
+                <Metric icon={Rocket} label="Launch" value="Ready" />
+              </div>
+            </div>
+          </section>
+
           <div className="flex items-center gap-3">
             <span className="h-px flex-1 bg-border" />
             <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Today &middot; Churn Propensity Model
+              Today &middot; {selectedProject.name}
             </span>
             <span className="h-px flex-1 bg-border" />
           </div>
 
-          <div className="mx-auto rounded-full border border-border bg-surface-muted/70 px-3 py-1 text-[11px] font-medium text-muted-foreground">
+          <div className="app-control mx-auto rounded-full px-4 py-1.5 text-[11px] font-semibold text-muted-foreground">
             {selectedWorkspace.name} / {selectedProject.name} &middot;{" "}
             {apiState === "connected"
               ? "Mock backend connected"
@@ -187,17 +207,35 @@ export function ChatThread({
 
 function EmptyWorkflowState({ title, text }: { title: string; text: string }) {
   return (
-    <div className="flex h-full items-center justify-center bg-canvas px-6">
-      <div className="max-w-xl rounded-2xl border border-border bg-surface p-8 text-center shadow-sm">
-        <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-info-soft text-primary">
-          1
+    <div className="flex h-full items-center justify-center px-6">
+      <div className="app-panel-raised w-full max-w-3xl rounded-[32px] p-8 text-center">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-error-soft text-primary shadow-sm">
+          <Rocket className="h-7 w-7" aria-hidden="true" />
         </div>
-        <h1 className="mt-5 text-3xl font-semibold tracking-tight">{title}</h1>
-        <p className="mt-3 text-sm leading-6 text-muted-foreground">{text}</p>
-        <p className="mt-5 text-xs font-medium text-primary">
+        <h1 className="mt-5 font-heading text-4xl font-bold tracking-tight">{title}</h1>
+        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">{text}</p>
+        <p className="mt-5 text-xs font-semibold text-primary">
           Use the sidebar actions to continue the setup flow.
         </p>
       </div>
+    </div>
+  )
+}
+
+function Metric({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: ElementType
+  label: string
+  value: string
+}) {
+  return (
+    <div className="app-control rounded-2xl p-3">
+      <Icon className="h-4 w-4 text-primary" aria-hidden="true" />
+      <div className="mt-3 truncate text-lg font-bold text-foreground">{value}</div>
+      <div className="mt-0.5 truncate text-[11px] font-medium text-muted-foreground">{label}</div>
     </div>
   )
 }

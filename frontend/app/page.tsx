@@ -7,8 +7,8 @@ import {
   Layers3,
   Rocket,
   ShieldCheck,
-  Sparkles,
 } from "lucide-react"
+import { ForgeAiIcon } from "@/components/brand/forge-ai-icon"
 
 const FLOW = [
   {
@@ -60,9 +60,7 @@ export default function HomePage() {
       <header className="sticky top-0 z-20 border-b border-border bg-surface/90 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link href="/" className="flex items-center gap-2.5" aria-label="Forge AI home">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Sparkles className="h-5 w-5" aria-hidden="true" />
-            </span>
+            <ForgeAiIcon size="md" priority />
             <span className="font-heading text-lg font-semibold tracking-tight">Forge AI</span>
           </Link>
 
@@ -96,7 +94,7 @@ export default function HomePage() {
             No consultants. No data team. Just describe the problem.
           </div>
           <h1 className="mt-5 max-w-4xl text-4xl font-semibold leading-[1.02] tracking-tight sm:text-5xl lg:text-6xl">
-            From business problem to production AI — in one conversation.
+            From business problem to deployable AI models — in one conversation.
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
             Forge AI replaces the strategy consultant, data analyst, and data science handoff with agents that craft the

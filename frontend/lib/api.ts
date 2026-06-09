@@ -61,6 +61,64 @@ export type ProjectAssets = {
   models: import("./types").LeaderboardRow[]
 }
 
+export type DatasetRecord = {
+  id: string
+  workspaceId: string
+  projectId: string
+  projectName: string
+  useCaseId?: string | null
+  name: string
+  sourceType: string
+  storageUri?: string | null
+  s3Path?: string | null
+  dataFormat?: "csv" | "pdf" | null
+  dataCategory?: "structured" | "unstructured" | null
+  rowCount: number
+  columnCount: number
+  qualityScore?: number | null
+  targetColumn?: string | null
+  taskType?: string | null
+  status: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type ModelRecord = {
+  trainingRunId: string
+  workspaceId: string
+  projectId: string
+  projectName: string
+  useCaseId: string
+  useCaseName: string
+  useCaseTaskType: string
+  datasetId: string
+  datasetName: string
+  datasetS3Path?: string | null
+  datasetFormat?: string | null
+  datasetCategory?: string | null
+  engine: string
+  predictorType: string
+  trainingStatus: string
+  bestMetricName?: string | null
+  bestMetricValue?: number | null
+  computeCost?: number | null
+  trainTimeSeconds?: number | null
+  sagemakerJobArn?: string | null
+  modelArtifactS3Path?: string | null
+  errorMessage?: string | null
+  leaderboardEntryId?: string | null
+  rank?: number | null
+  modelName?: string | null
+  metricValue?: number | null
+  inferenceLatencyMs?: number | null
+  artifactS3Path?: string | null
+  isBest: boolean
+  metadata: Record<string, unknown>
+  createdAt: string
+  startedAt?: string | null
+  completedAt?: string | null
+}
+
 async function parseApiError(response: Response): Promise<string> {
   try {
     const payload = await response.json()
@@ -161,6 +219,12 @@ export function persistAuthSession(auth: AuthResponse) {
   }
 }
 
+export function clearAuthSession() {
+  window.localStorage.removeItem("forge_ai_token")
+  window.localStorage.removeItem("forge_ai_user")
+  window.localStorage.removeItem("forge_ai_workspace")
+}
+
 export function createWorkspace(payload: { name: string }): Promise<Workspace> {
   return postWithAuth<Workspace>("/api/workspaces", payload)
 }
@@ -187,13 +251,26 @@ export function fetchProjectAssets(workspaceId: string, projectId: string): Prom
   )
 }
 
+export function fetchDatasets(workspaceId: string, projectId?: string): Promise<DatasetRecord[]> {
+  const params = new URLSearchParams({ workspaceId })
+  if (projectId) params.set("projectId", projectId)
+  return getWithAuth<DatasetRecord[]>(`/api/datasets?${params.toString()}`)
+}
+
+export function fetchModels(workspaceId: string, projectId?: string): Promise<ModelRecord[]> {
+  const params = new URLSearchParams({ workspaceId })
+  if (projectId) params.set("projectId", projectId)
+  return getWithAuth<ModelRecord[]>(`/api/models?${params.toString()}`)
+}
+
 export async function logoutUser(): Promise<void> {
   try {
     await postWithAuth<{ status: string }>("/api/auth/logout")
+  } catch {
+    // Local logout should still succeed if the server session is already gone
+    // or the backend is temporarily unavailable.
   } finally {
-    window.localStorage.removeItem("forge_ai_token")
-    window.localStorage.removeItem("forge_ai_user")
-    window.localStorage.removeItem("forge_ai_workspace")
+    clearAuthSession()
   }
 }
 

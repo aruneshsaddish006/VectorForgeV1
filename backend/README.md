@@ -61,6 +61,8 @@ uv run --project ../backend python init_db.py
 - `POST /api/workspaces`
 - `GET /api/projects?workspaceId={workspace_id}`
 - `POST /api/projects`
+- `GET /api/datasets?workspaceId={workspace_id}`
+- `GET /api/models?workspaceId={workspace_id}`
 - `GET /api/workspaces/{workspace_id}/projects/{project_id}/assets`
 - `GET /api/demo-workspace`
 - `GET /api/strategy`

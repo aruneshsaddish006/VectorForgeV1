@@ -1,12 +1,5 @@
 import type { Metadata, Viewport } from "next"
-import { Geist_Mono } from "next/font/google"
 import "./globals.css"
-
-const geistMono = Geist_Mono({
-  subsets: ["latin"],
-  variable: "--font-geist-mono",
-  display: "swap",
-})
 
 export const metadata: Metadata = {
   title: "Forge AI — AI Strategy & Launch Intelligence Platform",
@@ -42,7 +35,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={`${geistMono.variable} bg-background`} suppressHydrationWarning>
+    <html lang="en" className="bg-background" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
