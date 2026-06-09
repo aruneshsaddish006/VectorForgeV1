@@ -35,6 +35,24 @@ def list_projects(
     return workspace_service.list_projects(current_user["id"], workspace_id)
 
 
+@router.get("/datasets")
+def list_datasets(
+    workspace_id: str = Query(alias="workspaceId"),
+    project_id: str | None = Query(default=None, alias="projectId"),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> list[dict[str, Any]]:
+    return workspace_service.list_datasets(current_user["id"], workspace_id, project_id)
+
+
+@router.get("/models")
+def list_models(
+    workspace_id: str = Query(alias="workspaceId"),
+    project_id: str | None = Query(default=None, alias="projectId"),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> list[dict[str, Any]]:
+    return workspace_service.list_models(current_user["id"], workspace_id, project_id)
+
+
 @router.get("/workspaces/{workspace_id}/projects/{project_id}/assets")
 def project_assets(
     workspace_id: str,
