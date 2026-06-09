@@ -1,0 +1,164 @@
+@import url("https://api.fontshare.com/v2/css?f[]=clash-display@600,700&f[]=satoshi@400,500,700&display=swap");
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: "Satoshi", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: "Clash Display", "Satoshi", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono);
+
+  --color-canvas: var(--canvas);
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-foreground: var(--text-primary);
+  --color-muted-foreground: var(--text-secondary);
+
+  --color-primary: var(--primary);
+  --color-primary-dark: var(--primary-dark);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-error: var(--error);
+  --color-error-soft: var(--error-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+
+  --color-border: var(--border);
+  --color-ring: var(--primary);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.625rem;
+
+  color-scheme: light;
+
+  --canvas: #eef2f7;
+  --background: #f5f7fb;
+  --surface: #ffffff;
+  --surface-muted: #f3f5f9;
+
+  --primary: #e11d48;
+  --primary-dark: #be123c;
+  --primary-foreground: #ffffff;
+
+  --success: #13795b;
+  --success-soft: #e5f4ef;
+  --warning: #9a5b13;
+  --warning-soft: #fbf0d7;
+  --error: #b42318;
+  --error-soft: #f9e5e2;
+  --info: #be123c;
+  --info-soft: #fff1f4;
+
+  --text-primary: #18212f;
+  --text-secondary: #5a6678;
+  --border: #d8dee8;
+  --body-background:
+    radial-gradient(circle at 20% -10%, rgba(225, 29, 72, 0.12), transparent 28rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0) 22rem),
+    var(--canvas);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --canvas: #050508;
+  --background: #08090d;
+  --surface: #101116;
+  --surface-muted: #181a22;
+
+  --primary: #e11d48;
+  --primary-dark: #be123c;
+  --primary-foreground: #ffffff;
+
+  --success: #34d399;
+  --success-soft: #08251c;
+  --warning: #f59e0b;
+  --warning-soft: #2a1e08;
+  --error: #fb7185;
+  --error-soft: #2a0d14;
+  --info: #fb7185;
+  --info-soft: #2a0d18;
+
+  --text-primary: #f5f7fb;
+  --text-secondary: #9ca3af;
+  --border: #282b35;
+  --body-background:
+    radial-gradient(circle at 20% -10%, rgba(225, 29, 72, 0.18), transparent 28rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 18rem),
+    var(--canvas);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background: var(--body-background);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading);
+  }
+  /* Visible focus ring for WCAG 2.2 AA keyboard navigation */
+  :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Thin enterprise scrollbars */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.scroll-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 9999px;
+}
+.scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.animate-pulse-soft {
+  animation: pulse-soft 1.6s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}

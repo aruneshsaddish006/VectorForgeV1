@@ -1,22 +1,75 @@
+# OS / editor
 .DS_Store
-__pycache__/
-*.py[cod]
-*.egg-info/
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
 
+# Environment and secrets
 .env
 .env.*
 !.env.example
+*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.python-version
 .venv/
 .venv-*/
 venv/
+ENV/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.coverage
+coverage.xml
+htmlcov/
 
+# Python packaging / build output
+build/
+dist/
+site/
+*.whl
+
+# uv / notebooks / local tooling
+.ipynb_checkpoints/
+.uv-cache/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# VectorForge runtime artifacts
 runs/
 .staged_uploads/
 *.parquet
 *.log
+logs/
 
-build/
-dist/
+# Local databases and generated data
+*.db
+*.sqlite
+*.sqlite3
+*.duckdb
+
+# Large model / binary artifacts
+*.pkl
+*.joblib
+*.onnx
+*.pt
+*.pth
+*.bin
