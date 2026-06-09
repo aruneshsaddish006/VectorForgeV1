@@ -3,7 +3,8 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { type ElementType, type FormEvent, useState } from "react"
-import { ArrowRight, BarChart3, DatabaseZap, LockKeyhole, Mail, ShieldCheck, Sparkles } from "lucide-react"
+import { ArrowRight, BarChart3, DatabaseZap, LockKeyhole, Mail, ShieldCheck } from "lucide-react"
+import { ForgeAiIcon } from "@/components/brand/forge-ai-icon"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { continueWithGoogle, loginUser, persistAuthSession } from "@/lib/api"
 
@@ -163,9 +164,7 @@ function AuthHeader({ ctaHref, ctaLabel }: { ctaHref: string; ctaLabel: string }
     <header className="border-b border-border bg-surface/90 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link href="/" className="inline-flex items-center gap-2.5" aria-label="Forge AI home">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Sparkles className="h-5 w-5" aria-hidden="true" />
-          </span>
+          <ForgeAiIcon size="md" priority />
           <span className="font-heading text-lg font-semibold">Forge AI</span>
         </Link>
 

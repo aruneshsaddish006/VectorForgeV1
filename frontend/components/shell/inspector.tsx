@@ -108,10 +108,10 @@ export function Inspector({ open }: { open: boolean }) {
 
   return (
     <aside
-      className="hidden w-80 shrink-0 flex-col border-l border-border bg-surface xl:flex"
+      className="app-panel hidden w-80 shrink-0 flex-col overflow-hidden rounded-[28px] xl:flex"
       aria-label="Context inspector"
     >
-      <div className="flex h-14 items-center border-b border-border px-2">
+      <div className="flex h-16 items-center border-b border-border px-3">
         <nav className="flex w-full gap-1" role="tablist" aria-label="Inspector views">
           {(["context", "schema", "activity"] as Tab[]).map((t) => (
             <button
@@ -120,8 +120,8 @@ export function Inspector({ open }: { open: boolean }) {
               aria-selected={tab === t}
               onClick={() => setTab(t)}
               className={cn(
-                "flex-1 rounded-md px-2 py-1.5 text-xs font-medium capitalize transition-colors",
-                tab === t ? "bg-info-soft text-primary" : "text-muted-foreground hover:bg-surface-muted",
+                "flex-1 rounded-full px-2 py-2 text-xs font-semibold capitalize transition-colors",
+                tab === t ? "bg-surface-raised text-foreground shadow-sm" : "text-muted-foreground hover:bg-surface-raised/70",
               )}
             >
               {t}
@@ -156,7 +156,7 @@ function ContextView() {
           {items.map((i) => {
             const Icon = i.icon
             return (
-              <div key={i.label} className="flex items-center gap-3 rounded-lg border border-border bg-surface-muted/50 px-3 py-2">
+              <div key={i.label} className="app-control flex items-center gap-3 rounded-2xl px-3 py-2">
                 <Icon className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
                 <div className="min-w-0">
                   <div className="text-[11px] text-muted-foreground">{i.label}</div>
@@ -172,7 +172,7 @@ function ContextView() {
         <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           KPIs
         </h4>
-        <div className="rounded-lg border border-border bg-surface-muted/50 p-3 text-[13px] leading-relaxed text-foreground">
+        <div className="app-control rounded-2xl p-3 text-[13px] leading-relaxed text-foreground">
           Reduce logo churn by 15% over two quarters by flagging at-risk accounts 90 days in advance.
         </div>
       </div>
@@ -181,7 +181,7 @@ function ContextView() {
         <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Pending approvals
         </h4>
-        <div className="flex items-center justify-between rounded-lg border border-warning/30 bg-warning-soft/50 px-3 py-2 text-[13px]">
+        <div className="flex items-center justify-between rounded-2xl border border-warning/30 bg-warning-soft/50 px-3 py-2 text-[13px] shadow-sm">
           <span className="text-foreground">Stripe charge</span>
           <span className="font-mono font-medium text-warning">$1.94</span>
         </div>
@@ -203,7 +203,7 @@ function SchemaView({ schema }: { schema: SchemaColumn[] }) {
       </h4>
       <ul className="space-y-1.5">
         {schema.map((c) => (
-          <li key={c.name} className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2">
+          <li key={c.name} className="app-control flex items-center justify-between gap-2 rounded-2xl px-3 py-2">
             <div className="min-w-0">
               <div className="truncate font-mono text-[13px] font-medium text-foreground">{c.name}</div>
               <div className="font-mono text-[11px] text-muted-foreground">{c.type}</div>
@@ -259,7 +259,7 @@ function ActivityItem({ entry }: { entry: ActivityEntry }) {
         <p className="mt-0.5 text-[12px] leading-snug text-muted-foreground">{entry.message}</p>
       </button>
       {open && (entry.tool || entry.cost || entry.detail) && (
-        <div className="mt-1.5 space-y-1 rounded-md bg-surface-muted/60 px-2.5 py-2 text-[11px] text-muted-foreground">
+        <div className="app-control mt-1.5 space-y-1 rounded-2xl px-2.5 py-2 text-[11px] text-muted-foreground">
           {entry.tool && (
             <div className="flex justify-between">
               <span>Tool</span>
