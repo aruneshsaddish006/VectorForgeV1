@@ -79,3 +79,10 @@ uv run --project ../backend python init_db.py
 - Email signup creates an `app_users` record, password credential, and password identity.
 - Email login validates the password hash and creates a new session.
 - Google auth currently uses a mock provider payload and stores the identity in `auth_identities` with `provider = 'google'`. A production Google OAuth or Google Identity Services token verification step can reuse the same endpoint contract.
+
+
+kill -9 $(lsof -ti:8001) && echo "killed"
+
+kill -9 $(lsof -ti:8000) && echo "killed"
+
+kill -9 $(lsof -ti:3000) && echo "killed"

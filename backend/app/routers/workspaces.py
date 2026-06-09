@@ -35,6 +35,11 @@ def list_projects(
     return workspace_service.list_projects(current_user["id"], workspace_id)
 
 
+@router.delete("/projects/{project_id}", status_code=204)
+def delete_project(project_id: str, current_user: dict[str, Any] = Depends(get_current_user)) -> None:
+    workspace_service.delete_project(current_user["id"], project_id)
+
+
 @router.get("/datasets")
 def list_datasets(
     workspace_id: str = Query(alias="workspaceId"),

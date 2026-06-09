@@ -128,6 +128,32 @@ def list_projects(user_id: str, workspace_id: str) -> list[dict[str, Any]]:
         raise db_error(exc) from exc
 
 
+def delete_project(user_id: str, project_id: str) -> None:
+    try:
+        with connect_db() as connection:
+            with connection.cursor(row_factory=dict_row) as cursor:
+                cursor.execute(
+                    """
+                    SELECT p.id, p.organization_id
+                    FROM projects p
+                    JOIN workspace_members wm ON wm.organization_id = p.organization_id
+                    WHERE p.id = %s AND wm.user_id = %s
+                    """,
+                    (project_id, user_id),
+                )
+                project = cursor.fetchone()
+                if not project:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Project not found or you do not have access.",
+                    )
+                cursor.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise db_error(exc) from exc
+
+
 def get_project_assets(user_id: str, workspace_id: str, project_id: str) -> dict[str, Any]:
     try:
         with connect_db() as connection:

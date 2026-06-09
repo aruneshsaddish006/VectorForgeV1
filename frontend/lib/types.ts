@@ -167,6 +167,52 @@ export type RagRun = {
   bestConfig: { k: string; v: string }[]
 }
 
+// ---------------------------------------------------------------------------
+// Conversational agent types
+// ---------------------------------------------------------------------------
+
+export type InterruptType =
+  | "clarification"
+  | "sub_problem_confirmation"
+  | "dataset_source_choice"
+  | "awaiting_upload"
+  | "exa_results_review"
+  | "dataset_cost_approval"
+  | "schema_confirmation"
+  | "final_review"
+
+export type ConversationMessage = {
+  role: "user" | "agent"
+  agentName?: string | null
+  content: string
+  timestamp: string
+  cardType?: string | null
+  cardData?: Record<string, unknown> | null
+}
+
+export type InterruptOption = { value: string; label: string }
+
+export type InterruptPayload = {
+  type: InterruptType
+  message: string
+  data?: Record<string, unknown> | null
+  options?: InterruptOption[] | null
+  estimatedCostUsd?: number | null
+  questions?: string[] | null
+  finalOutput?: Record<string, unknown> | null
+  problemId?: string | null
+  problemName?: string | null
+  engine?: string | null
+}
+
+export type ConversationSession = {
+  sessionId: string
+  status: string
+  messages: ConversationMessage[]
+  interrupt: InterruptPayload | null
+  finalOutput?: Record<string, unknown> | null
+}
+
 export type DemoWorkspace = {
   strategy: StrategySummary
   dataSources: DataSourcePath[]

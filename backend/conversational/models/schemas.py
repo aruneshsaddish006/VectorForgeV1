@@ -215,6 +215,7 @@ class ConversationStateResponse(BaseModel):
     status: ConversationStatus
     messages: list[ConversationMessage] = Field(default_factory=list)
     interrupt: Optional[InterruptPayload] = None
+    final_output: Optional[dict[str, Any]] = None
     ml_problems_preview: Optional[list[dict]] = None
     pending_prob_id: Optional[str] = None
     session_cost_usd: float = 0.0

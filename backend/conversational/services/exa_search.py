@@ -81,7 +81,7 @@ async def search_datasets(
         "type": "neural",
     }
 
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=30, verify=settings.llm_ssl_verify) as client:
         resp = await client.post(_EXA_SEARCH_URL, json=payload, headers=headers)
         resp.raise_for_status()
         data = resp.json()
@@ -100,6 +100,53 @@ async def search_datasets(
         )
 
     return results
+
+
+async def search_use_case_benchmarks(
+    problem_name: str,
+    domain: str,
+    num_results: int = 3,
+) -> list[dict]:
+    """Search for ROI / impact benchmarks for an ML use case.
+
+    Returns short evidence snippets (title, url, snippet) or an empty list
+    when EXA_API_KEY is missing or the request fails.
+    """
+    settings = get_settings()
+    if not settings.exa_api_key:
+        return []
+
+    query = f"{problem_name} {domain} machine learning ROI impact results case study"
+
+    headers = {
+        "x-api-key": settings.exa_api_key,
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "query": query,
+        "num_results": num_results,
+        "use_autoprompt": True,
+        "type": "neural",
+        "contents": {"text": {"maxCharacters": 400}},
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=15, verify=settings.llm_ssl_verify) as client:
+            resp = await client.post(_EXA_SEARCH_URL, json=payload, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception:
+        return []
+
+    return [
+        {
+            "title": item.get("title", ""),
+            "url": item.get("url", ""),
+            "snippet": (item.get("text") or "")[:400],
+        }
+        for item in data.get("results", [])
+        if item.get("url")
+    ]
 
 
 async def estimate_build_cost() -> float:

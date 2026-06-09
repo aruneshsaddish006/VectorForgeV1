@@ -23,11 +23,13 @@ S3 upload pattern:
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.responses import StreamingResponse
 from langgraph.types import Command
 
 from conversational.graph.checkpointer import thread_config
@@ -74,15 +76,20 @@ async def start_conversation(
 
     state = initial_state(session_id=session_id, first_message=body.message)
 
-    result = await graph.ainvoke(state, config=config)
-    interrupt_payload = await _get_interrupt(graph, config)
+    await graph.ainvoke(state, config=config)
+
+    # Read the full snapshot — ainvoke returns the pre-interrupt state only.
+    # The snapshot has the complete state (including agent messages) after the node ran.
+    snapshot = await graph.aget_state(config)
+    state_values = snapshot.values if snapshot is not None else {}
+    interrupt_payload = _extract_interrupt(snapshot) if snapshot is not None else None
 
     return {
         "data": {
             "session_id": session_id,
-            "status": result.get("status", "intake"),
+            "status": state_values.get("status", "intake"),
             "interrupt": interrupt_payload,
-            "messages": result.get("messages", []),
+            "messages": state_values.get("messages", []),
         }
     }
 
@@ -109,7 +116,7 @@ async def get_conversation(
     return {
         "data": ConversationStateResponse(
             session_id=session_id,
-            status=state_values.get("status", "unknown"),
+            status=state_values.get("status", "intake"),
             messages=state_values.get("messages", []),
             interrupt=interrupt_payload,
             final_output=state_values.get("final_output"),
@@ -119,17 +126,23 @@ async def get_conversation(
 
 @router.post(
     "/conversations/{session_id}/respond",
-    summary="Resume the graph with a user response to an interrupt",
+    summary="Resume the graph with a user response to an interrupt (SSE streaming)",
 )
 async def respond_to_interrupt(
     session_id: str,
     body: RespondRequest,
     request: Request,
-) -> dict[str, Any]:
-    """Resume a paused graph with the user's answer.
+) -> StreamingResponse:
+    """Resume a paused graph and stream state updates as Server-Sent Events.
 
-    The payload in body.response is passed directly to Command(resume=...) and
-    forwarded to the node that called interrupt().
+    Each SSE event is a JSON object with a ``type`` field:
+      - ``status``  — node transitioned to a new graph status
+      - ``message`` — a new agent message was produced by a node
+      - ``complete``— graph reached an interrupt or finished; includes full state
+      - ``error``   — unhandled exception during streaming
+
+    LangGraph checkpoints after every node regardless of whether ``ainvoke`` or
+    ``astream`` is used, so the checkpoint guarantee is unchanged.
     """
     graph = _graph(request)
     config = thread_config(session_id)
@@ -140,8 +153,6 @@ async def respond_to_interrupt(
 
     resume_payload = body.model_dump(exclude_none=True)
 
-    # Append the user's answers as a conversation message so nodes that
-    # re-run from the top (e.g. intake) see the answers in message history.
     user_text = _answers_to_text(resume_payload)
     if user_text:
         await graph.aupdate_state(
@@ -158,25 +169,43 @@ async def respond_to_interrupt(
             },
         )
 
-    result = await graph.ainvoke(Command(resume=resume_payload), config=config)
-    interrupt_payload = await _get_interrupt(graph, config)
+    async def event_stream():
+        try:
+            async for chunk in graph.astream(
+                Command(resume=resume_payload),
+                config=config,
+                stream_mode="updates",
+            ):
+                for node_name, update in chunk.items():
+                    if update.get("status"):
+                        yield f"data: {json.dumps({'type': 'status', 'status': update['status'], 'node': node_name})}\n\n"
+                    for msg in update.get("messages", []):
+                        if isinstance(msg, dict) and msg.get("role") == "agent":
+                            yield f"data: {json.dumps({'type': 'message', 'message': msg, 'node': node_name})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)})}\n\n"
+            return
 
-    # Write the final JSON output to Redis once the conversation is complete.
-    # The output matches conv-output-schema.json exactly — orchestrators read
-    # from Redis at key vforge:conv:{session_id} without any transformation.
-    final_output = result.get("final_output")
-    if result.get("status") == "complete" and final_output:
-        await write_session_output(session_id, final_output)
+        # Graph paused at interrupt or completed — emit final snapshot
+        final_snap = await graph.aget_state(config)
+        if final_snap is None:
+            yield f"data: {json.dumps({'type': 'error', 'detail': 'Session state lost after streaming.'})}\n\n"
+            return
 
-    return {
-        "data": {
-            "session_id": session_id,
-            "status": result.get("status", "unknown"),
-            "interrupt": interrupt_payload,
-            "messages": result.get("messages", []),
-            "final_output": final_output,
-        }
-    }
+        state_vals = final_snap.values
+        interrupt_payload = _extract_interrupt(final_snap)
+        final_output = state_vals.get("final_output")
+
+        if state_vals.get("status") == "complete" and final_output:
+            await write_session_output(session_id, final_output)
+
+        yield f"data: {json.dumps({'type': 'complete', 'data': {'session_id': session_id, 'status': state_vals.get('status', 'unknown'), 'interrupt': interrupt_payload, 'messages': state_vals.get('messages', []), 'final_output': final_output}})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post(

@@ -10,8 +10,45 @@ const SUGGESTIONS = [
   "Optimize a support RAG pipeline",
 ]
 
-export function Composer() {
+type Props = {
+  onSubmit?: (text: string) => void
+  onFileSelect?: (file: File) => void
+  disabled?: boolean
+  placeholder?: string
+}
+
+export function Composer({
+  onSubmit,
+  onFileSelect,
+  disabled = false,
+  placeholder = "Describe a business problem, or ask the agent to source data…",
+}: Props) {
   const [value, setValue] = React.useState("")
+  const fileRef = React.useRef<HTMLInputElement>(null)
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const text = value.trim()
+    if (!text || disabled) return
+    onSubmit?.(text)
+    setValue("")
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      handleSubmit(e as unknown as React.FormEvent)
+    }
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) {
+      onFileSelect?.(file)
+      e.target.value = ""
+    }
+  }
+
   return (
     <div className="border-t border-border bg-surface-panel px-4 py-3 backdrop-blur-xl sm:px-6">
       <div className="mx-auto max-w-5xl">
@@ -19,6 +56,8 @@ export function Composer() {
           {SUGGESTIONS.map((s) => (
             <button
               key={s}
+              type="button"
+              disabled={disabled}
               onClick={() => setValue(s)}
               className="app-control flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold text-muted-foreground hover:border-primary/40 hover:text-foreground"
             >
@@ -32,7 +71,23 @@ export function Composer() {
           onSubmit={(e) => e.preventDefault()}
           className="app-panel-raised flex items-end gap-2 rounded-[22px] p-2 focus-within:border-primary/50"
         >
-          <Button type="button" variant="ghost" size="icon" aria-label="Attach file" className="shrink-0">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv,.parquet,.json"
+            className="sr-only"
+            onChange={handleFileChange}
+            aria-hidden="true"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Attach dataset file"
+            className="shrink-0"
+            disabled={disabled}
+            onClick={() => fileRef.current?.click()}
+          >
             <Paperclip className="h-5 w-5" aria-hidden="true" />
           </Button>
           <label htmlFor="composer" className="sr-only">
@@ -43,10 +98,18 @@ export function Composer() {
             rows={1}
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder="Describe a business problem, or ask the agent to source data…"
-            className="max-h-32 min-h-[2.25rem] flex-1 resize-none bg-transparent py-1.5 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none"
+            onKeyDown={handleKeyDown}
+            disabled={disabled}
+            placeholder={placeholder}
+            className="max-h-32 min-h-[2.25rem] flex-1 resize-none bg-transparent py-1.5 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"
           />
-          <Button type="submit" size="icon" aria-label="Send message" className="shrink-0" disabled={!value.trim()}>
+          <Button
+            type="submit"
+            size="icon"
+            aria-label="Send message"
+            className="shrink-0"
+            disabled={!value.trim() || disabled}
+          >
             <ArrowUp className="h-5 w-5" aria-hidden="true" />
           </Button>
         </form>

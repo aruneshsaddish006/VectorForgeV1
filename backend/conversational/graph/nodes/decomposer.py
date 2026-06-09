@@ -13,6 +13,7 @@ Resume payload:  {"confirmed": true, "column_overrides": {"prob_1": {"label_colu
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import yaml
@@ -20,6 +21,7 @@ from langgraph.types import interrupt
 
 from conversational.graph.state import ConversationalState, agent_message
 from conversational.models.schemas import InterruptType
+from conversational.services.exa_search import search_use_case_benchmarks
 from conversational.services.llm import structured_llm_call
 
 _TAXONOMY_PATH = Path(__file__).parent.parent.parent / "models" / "problem_taxonomy.yaml"
@@ -173,6 +175,9 @@ async def decomposer_node(state: ConversationalState) -> dict:
     for prob in ml_problems:
         _enrich_from_taxonomy(prob)
 
+    domain: str = state.get("domain") or "general"
+    exa_insights = await _fetch_exa_insights(ml_problems, domain)
+
     constraint_summary = {
         "narrative": result.get("constraint_narrative", ""),
         "dropped_problems": result.get("dropped_problems", []),
@@ -194,6 +199,7 @@ async def decomposer_node(state: ConversationalState) -> dict:
             for p in ml_problems
         ],
         "constraint_summary": constraint_summary,
+        "exa_insights": exa_insights,
     }
 
     state_update = {
@@ -236,6 +242,24 @@ def _build_context(state: ConversationalState) -> str:
         parts.append("\nUSER CONTEXT (from conversation):")
         parts.extend(f"  {msg}" for msg in user_answers[-4:])
     return "\n".join(parts)
+
+
+async def _fetch_exa_insights(ml_problems: list[dict], domain: str) -> dict[str, list[dict]]:
+    """Run Exa benchmark searches for all problems in parallel; gracefully skip failures."""
+    async def _one(p: dict) -> tuple[str, list[dict]]:
+        try:
+            results = await search_use_case_benchmarks(p["name"], domain)
+        except Exception:
+            results = []
+        return p["id"], results
+
+    pairs = await asyncio.gather(*[_one(p) for p in ml_problems], return_exceptions=True)
+    return {
+        prob_id: insights
+        for item in pairs
+        if isinstance(item, tuple)
+        for prob_id, insights in [item]
+    }
 
 
 def _enrich_from_taxonomy(problem: dict) -> None:

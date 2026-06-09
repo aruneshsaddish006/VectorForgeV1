@@ -71,7 +71,28 @@ _EXTRACTION_SCHEMA = {
 
 
 async def intake_node(state: ConversationalState) -> dict:
-    """Extract business problem; interrupt for clarification if context is thin."""
+    """Extract business problem; ask ONE clarification round then always advance.
+
+    Flow matches test.md exactly:
+      Step 1: user sends problem → LLM extracts → interrupt(clarification)
+      Step 2: user answers       → skip re-evaluation, advance to decomposing
+    """
+    rounds = state.get("clarification_questions_asked", 0)
+
+    # After the user has answered clarification questions, always advance.
+    # Do NOT re-run the LLM — it will ask more questions and break the flow.
+    if rounds >= MAX_CLARIFICATION_ROUNDS:
+        return {
+            "status": "decomposing",
+            "clarification_questions_asked": rounds,
+            "messages": [
+                agent_message(
+                    content="Got it — analysing your problem now.",
+                    agent_name="Intent Agent",
+                )
+            ],
+        }
+
     conversation_text = _format_messages(state["messages"])
 
     result = await structured_llm_call(
@@ -84,7 +105,7 @@ async def intake_node(state: ConversationalState) -> dict:
 
     state_update: dict = {
         "status": "intake",
-        "clarification_questions_asked": state["clarification_questions_asked"],
+        "clarification_questions_asked": rounds,
     }
 
     # Merge extracted fields into state
@@ -92,6 +113,7 @@ async def intake_node(state: ConversationalState) -> dict:
         if result.get(field):
             state_update[field] = result[field]
 
+    # If LLM already has enough context, skip straight to decomposing
     if result["is_sufficient"]:
         state_update["status"] = "decomposing"
         state_update["messages"] = [
@@ -108,17 +130,7 @@ async def intake_node(state: ConversationalState) -> dict:
         ]
         return state_update
 
-    rounds = state["clarification_questions_asked"]
-    if rounds >= MAX_CLARIFICATION_ROUNDS:
-        state_update["status"] = "decomposing"
-        state_update["messages"] = [
-            agent_message(
-                content="Proceeding with available information. I'll note assumptions where needed.",
-                agent_name="Intent Agent",
-            )
-        ]
-        return state_update
-
+    # First (and only) clarification round
     state_update["clarification_questions_asked"] = rounds + 1
     state_update["messages"] = [
         agent_message(

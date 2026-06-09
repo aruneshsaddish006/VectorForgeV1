@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState, type ElementType } from "react"
-import { Cpu, Database, Rocket, ShieldCheck } from "lucide-react"
+import { useEffect, useRef, useState, type ElementType } from "react"
+import { Cpu, Database, Loader2, Rocket, ShieldCheck } from "lucide-react"
 import { UserMessage, AgentMessage, SystemCardSlot } from "./messages"
 import { Composer } from "./composer"
 import { StrategyCard } from "@/components/cards/strategy-card"
@@ -12,8 +12,62 @@ import { TrainingCard } from "@/components/cards/training-card"
 import { RagCard } from "@/components/cards/rag-card"
 import { DeploymentCard } from "@/components/cards/deployment-card"
 import { BillingApprovalCard } from "@/components/cards/billing-approval-card"
-import { fetchDemoWorkspace, fetchProjectAssets, type Project, type ProjectAssets, type Workspace } from "@/lib/api"
-import type { DemoWorkspace } from "@/lib/types"
+import {
+  fetchDemoWorkspace,
+  fetchProjectAssets,
+  generateSessionId,
+  getConversationState,
+  respondToInterrupt,
+  startConversation,
+  uploadDataset,
+  type Project,
+  type ProjectAssets,
+  type Workspace,
+} from "@/lib/api"
+import type { ConversationMessage, ConversationSession, DemoWorkspace } from "@/lib/types"
+
+// ---------------------------------------------------------------------------
+// Session ID helpers
+// ---------------------------------------------------------------------------
+
+const DEFAULT_WORKSPACE_ID = "default_workspace"
+const DEFAULT_PROJECT_ID = "default_project"
+
+/**
+ * Deterministic session ID scoped to a specific user + workspace + project.
+ * Falls back to default IDs so a session can always be created, even before
+ * workspace/project management has been set up by the other developer.
+ */
+function buildSessionId(
+  userId: string,
+  workspaceId: string,
+  projectId: string,
+): string {
+  return `${userId}_${workspaceId}_${projectId}`
+}
+
+function getStoredUserId(): string {
+  if (typeof window === "undefined") return "anonymous"
+  try {
+    const raw = window.localStorage.getItem("forge_ai_user")
+    const user = raw ? JSON.parse(raw) : null
+    return user?.id ?? "anonymous"
+  } catch {
+    return "anonymous"
+  }
+}
+
+function formatTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+  } catch {
+    return ""
+  }
+}
+
+// ---------------------------------------------------------------------------
+// ChatThread
+// ---------------------------------------------------------------------------
 
 export function ChatThread({
   selectedWorkspace,
@@ -22,35 +76,129 @@ export function ChatThread({
   selectedWorkspace: Workspace | null
   selectedProject: Project | null
 }) {
+  // Demo / mock-backend state (existing behaviour — unchanged)
   const [workspace, setWorkspace] = useState<DemoWorkspace | null>(null)
   const [assets, setAssets] = useState<ProjectAssets | null>(null)
   const [apiState, setApiState] = useState<"loading" | "connected" | "fallback">("loading")
 
+  // Conversational agent state
+  const [session, setSession] = useState<ConversationSession | null>(null)
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [convStarted, setConvStarted] = useState(false)
+  const [convLoading, setConvLoading] = useState(false)
+  const [convError, setConvError] = useState<string | null>(null)
+
+  const bottomRef = useRef<HTMLDivElement>(null)
+
+  // Load demo workspace data (existing behaviour — unchanged)
   useEffect(() => {
     const controller = new AbortController()
-
     fetchDemoWorkspace(controller.signal)
-      .then((data) => {
-        setWorkspace(data)
-        setApiState("connected")
-      })
-      .catch(() => {
-        setApiState("fallback")
-      })
-
+      .then((data) => { setWorkspace(data); setApiState("connected") })
+      .catch(() => { setApiState("fallback") })
     return () => controller.abort()
   }, [])
 
   useEffect(() => {
-    if (!selectedWorkspace || !selectedProject) {
-      setAssets(null)
-      return
-    }
-
+    if (!selectedWorkspace || !selectedProject) { setAssets(null); return }
     fetchProjectAssets(selectedWorkspace.id, selectedProject.id)
       .then(setAssets)
       .catch(() => setAssets(null))
   }, [selectedWorkspace?.id, selectedProject?.id])
+
+  // Build deterministic session ID on every workspace/project change.
+  // Falls back to defaults so a session always exists even before the other
+  // developer wires up full user/workspace/project management.
+  useEffect(() => {
+    const userId = getStoredUserId()
+    const wsId = selectedWorkspace?.id ?? DEFAULT_WORKSPACE_ID
+    const projId = selectedProject?.id ?? DEFAULT_PROJECT_ID
+    const sid = buildSessionId(userId, wsId, projId)
+    setSessionId(sid)
+
+    // Try to hydrate an existing session for this combination
+    setConvLoading(true)
+    getConversationState(sid)
+      .then((s) => { setSession(s); setConvStarted(true) })
+      .catch(() => {
+        // No existing session on backend — fresh start
+        setSession(null)
+        setConvStarted(false)
+      })
+      .finally(() => setConvLoading(false))
+  }, [selectedWorkspace?.id, selectedProject?.id])
+
+  // Auto-scroll when new messages arrive
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [session?.messages.length])
+
+  async function handleSend(text: string) {
+    if (!sessionId || convLoading) return
+    setConvError(null)
+    setConvLoading(true)
+
+    // Optimistic user message so the UI responds immediately
+    const userMsg: ConversationMessage = {
+      role: "user",
+      content: text,
+      timestamp: new Date().toISOString(),
+    }
+    setSession((prev: ConversationSession | null) =>
+      prev
+        ? { ...prev, messages: [...prev.messages, userMsg], interrupt: null }
+        : { sessionId: sessionId!, status: "intake", messages: [userMsg], interrupt: null },
+    )
+
+    try {
+      const updated = convStarted
+        ? await respondToInterrupt(sessionId, { answers: { "0": text } })
+        : await startConversation(sessionId, text)
+      if (!convStarted) setConvStarted(true)
+      setSession(updated)
+    } catch (err) {
+      setConvError(err instanceof Error ? err.message : "Something went wrong.")
+    } finally {
+      setConvLoading(false)
+    }
+  }
+
+  async function handleInterruptAction(payload: Record<string, unknown>) {
+    if (!sessionId || convLoading) return
+    setConvError(null)
+    setConvLoading(true)
+    try {
+      setSession(await respondToInterrupt(sessionId, payload))
+    } catch (err) {
+      setConvError(err instanceof Error ? err.message : "Something went wrong.")
+    } finally {
+      setConvLoading(false)
+    }
+  }
+
+  async function handleFileUpload(probId: string, file: File) {
+    if (!sessionId || convLoading) return
+    setConvError(null)
+    setConvLoading(true)
+    try {
+      await uploadDataset(sessionId, probId, file)
+      setSession(await getConversationState(sessionId))
+    } catch (err) {
+      setConvError(err instanceof Error ? err.message : "Upload failed.")
+    } finally {
+      setConvLoading(false)
+    }
+  }
+
+  // Paperclip in Composer → forward to file upload only when graph is awaiting upload
+  function handleComposerFile(file: File) {
+    const probId = session?.interrupt?.problemId
+    if (probId) handleFileUpload(probId, file)
+  }
+
+  // ---------------------------------------------------------------------------
+  // Empty states — unchanged from original
+  // ---------------------------------------------------------------------------
 
   if (!selectedWorkspace) {
     return (
@@ -69,6 +217,8 @@ export function ChatThread({
       />
     )
   }
+
+  const isComplete = session?.status === "complete"
 
   return (
     <div className="relative flex h-full flex-col">
@@ -111,96 +261,168 @@ export function ChatThread({
                 : "Connecting to mock backend..."}
           </div>
 
-          <UserMessage time="9:41 AM">
-            We&apos;re losing enterprise customers and can&apos;t predict who&apos;s about to churn. Help me build
-            something that flags at-risk accounts before renewal.
-          </UserMessage>
+          {/* ----------------------------------------------------------------
+              Live conversation messages from the conversational agent.
+              Rendered only after the conversation has been started so the
+              demo messages below remain visible during development.
+              ---------------------------------------------------------------- */}
+          {convStarted && session?.messages.map((msg, i) => {
+            if (msg.role === "user") {
+              return (
+                <UserMessage key={`live-${i}`} time={formatTime(msg.timestamp)}>
+                  {msg.content}
+                </UserMessage>
+              )
+            }
+            return (
+              <AgentMessage
+                key={`live-${i}`}
+                agent={msg.agentName ?? "Agent"}
+                time={formatTime(msg.timestamp)}
+              >
+                {msg.content}
+              </AgentMessage>
+            )
+          })}
 
-          <AgentMessage agent="Intent Agent" time="9:41 AM">
-            Got it. That&apos;s a <span className="font-medium text-foreground">churn prediction</span> problem. Before
-            we touch data, let me translate this into a concrete ML strategy and lay out the path end-to-end. Here&apos;s
-            what I&apos;m proposing.
-          </AgentMessage>
+          {/* Thinking indicator */}
+          {convLoading && (
+            <div className="flex gap-3">
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-foreground text-background">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              </span>
+              <div className="flex items-center rounded-2xl rounded-tl-sm border border-border bg-surface px-4 py-2.5 text-sm text-muted-foreground">
+                Thinking…
+              </div>
+            </div>
+          )}
 
-          <SystemCardSlot>
-            <StrategyCard strategy={workspace?.strategy} />
-          </SystemCardSlot>
+          {/* Error banner */}
+          {convError && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              {convError}
+            </div>
+          )}
 
-          <UserMessage time="9:43 AM">Looks right. The plan works for me &mdash; let&apos;s proceed.</UserMessage>
+          {/* Completion banner — shown after final_review is confirmed and Redis is written */}
+          {isComplete && (
+            <div className="rounded-xl border border-border bg-surface px-4 py-4 text-center text-sm text-foreground">
+              Experiment plan ready — session{" "}
+              <span className="font-mono text-primary">{sessionId}</span> output written to Redis.
+              Orchestrators can now consume it.
+            </div>
+          )}
 
-          <AgentMessage agent="Data Agent" time="9:43 AM">
-            To train a reliable model I need historical account data. You can bring your own, connect a warehouse, or I
-            can build a fresh labeled dataset from the open web using Exa. How do you want to source data?
-          </AgentMessage>
+          {/* ----------------------------------------------------------------
+              Static demo messages — kept intact so the UI developer working
+              on workspace/project management can reference the full flow.
+              Hidden once the real conversation has started.
+              ---------------------------------------------------------------- */}
+          {!convStarted && (
+            <>
+              <UserMessage time="9:41 AM">
+                We&apos;re losing enterprise customers and can&apos;t predict who&apos;s about to churn. Help me build
+                something that flags at-risk accounts before renewal.
+              </UserMessage>
 
-          <SystemCardSlot>
-            <DataSourceCard paths={workspace?.dataSources} />
-          </SystemCardSlot>
+              <AgentMessage agent="Intent Agent" time="9:41 AM">
+                Got it. That&apos;s a <span className="font-medium text-foreground">churn prediction</span> problem. Before
+                we touch data, let me translate this into a concrete ML strategy and lay out the path end-to-end. Here&apos;s
+                what I&apos;m proposing.
+              </AgentMessage>
 
-          <UserMessage time="9:45 AM">
-            We don&apos;t have clean historical labels. Build a dataset with Exa &mdash; B2B SaaS companies with firmographics
-            and public churn signals.
-          </UserMessage>
+              <SystemCardSlot>
+                <StrategyCard strategy={workspace?.strategy} />
+              </SystemCardSlot>
 
-          <AgentMessage agent="Data Agent" time="9:45 AM">
-            Understood. Synthesizing a labeled dataset is a billable, long-running job, so you&apos;ll approve scope and
-            cost before anything runs. Configure the build below.
-          </AgentMessage>
+              <UserMessage time="9:43 AM">Looks right. The plan works for me &mdash; let&apos;s proceed.</UserMessage>
 
-          <SystemCardSlot>
-            <ExaBuilderCard run={workspace?.exaRun} />
-          </SystemCardSlot>
+              <AgentMessage agent="Data Agent" time="9:43 AM">
+                To train a reliable model I need historical account data. You can bring your own, connect a warehouse, or I
+                can build a fresh labeled dataset from the open web using Exa. How do you want to source data?
+              </AgentMessage>
 
-          <AgentMessage agent="Data Agent" time="10:02 AM">
-            Dataset ready &mdash; 4,820 rows across 14 features, fully traceable to source. Here&apos;s the final schema.
-            Confirm it and I&apos;ll hand off to training. This is the last gate before model search begins.
-          </AgentMessage>
+              <SystemCardSlot>
+                <DataSourceCard paths={workspace?.dataSources} />
+              </SystemCardSlot>
 
-          <SystemCardSlot>
-            <SchemaConfirmCard dataset={assets?.dataset || workspace?.dataset} />
-          </SystemCardSlot>
+              <UserMessage time="9:45 AM">
+                We don&apos;t have clean historical labels. Build a dataset with Exa &mdash; B2B SaaS companies with firmographics
+                and public churn signals.
+              </UserMessage>
 
-          <AgentMessage agent="Training Agent" time="10:04 AM">
-            Schema locked. Running AutoGluon to search model families and ensembles against your churn label. No further
-            input needed &mdash; I&apos;ll surface the leaderboard as it converges.
-          </AgentMessage>
+              <AgentMessage agent="Data Agent" time="9:45 AM">
+                Understood. Synthesizing a labeled dataset is a billable, long-running job, so you&apos;ll approve scope and
+                cost before anything runs. Configure the build below.
+              </AgentMessage>
 
-          <SystemCardSlot>
-            <TrainingCard training={assets?.training || workspace?.training} />
-          </SystemCardSlot>
+              <SystemCardSlot>
+                <ExaBuilderCard run={workspace?.exaRun} />
+              </SystemCardSlot>
 
-          <AgentMessage agent="RAG Agent" time="10:19 AM">
-            The strategy also called for a retrieval layer so account managers can ask questions in natural language. I
-            built an AutoRAG pipeline over your dataset and source documents.
-          </AgentMessage>
+              <AgentMessage agent="Data Agent" time="10:02 AM">
+                Dataset ready &mdash; 4,820 rows across 14 features, fully traceable to source. Here&apos;s the final schema.
+                Confirm it and I&apos;ll hand off to training. This is the last gate before model search begins.
+              </AgentMessage>
 
-          <SystemCardSlot>
-            <RagCard rag={workspace?.rag} />
-          </SystemCardSlot>
+              <SystemCardSlot>
+                <SchemaConfirmCard dataset={assets?.dataset || workspace?.dataset} />
+              </SystemCardSlot>
 
-          <AgentMessage agent="Deployment Agent" time="10:24 AM">
-            Everything passed validation. I can promote the winning ensemble and the RAG endpoint to a managed,
-            autoscaling deployment with a versioned API.
-          </AgentMessage>
+              <AgentMessage agent="Training Agent" time="10:04 AM">
+                Schema locked. Running AutoGluon to search model families and ensembles against your churn label. No further
+                input needed &mdash; I&apos;ll surface the leaderboard as it converges.
+              </AgentMessage>
 
-          <SystemCardSlot>
-            <DeploymentCard />
-          </SystemCardSlot>
+              <SystemCardSlot>
+                <TrainingCard training={assets?.training || workspace?.training} />
+              </SystemCardSlot>
 
-          <AgentMessage agent="Billing Agent" time="10:24 AM">
-            Promoting to production moves this workspace to metered usage. Review the cost summary and approve to go
-            live.
-          </AgentMessage>
+              <AgentMessage agent="RAG Agent" time="10:19 AM">
+                The strategy also called for a retrieval layer so account managers can ask questions in natural language. I
+                built an AutoRAG pipeline over your dataset and source documents.
+              </AgentMessage>
 
-          <SystemCardSlot>
-            <BillingApprovalCard />
-          </SystemCardSlot>
+              <SystemCardSlot>
+                <RagCard rag={workspace?.rag} />
+              </SystemCardSlot>
 
-          <div className="h-2" />
+              <AgentMessage agent="Deployment Agent" time="10:24 AM">
+                Everything passed validation. I can promote the winning ensemble and the RAG endpoint to a managed,
+                autoscaling deployment with a versioned API.
+              </AgentMessage>
+
+              <SystemCardSlot>
+                <DeploymentCard />
+              </SystemCardSlot>
+
+              <AgentMessage agent="Billing Agent" time="10:24 AM">
+                Promoting to production moves this workspace to metered usage. Review the cost summary and approve to go
+                live.
+              </AgentMessage>
+
+              <SystemCardSlot>
+                <BillingApprovalCard />
+              </SystemCardSlot>
+            </>
+          )}
+
+          <div className="h-2" ref={bottomRef} />
         </div>
       </div>
 
-      <Composer />
+      <Composer
+        onSubmit={handleSend}
+        onFileSelect={handleComposerFile}
+        disabled={convLoading || isComplete}
+        placeholder={
+          isComplete
+            ? "Conversation complete."
+            : session?.interrupt?.type === "clarification"
+              ? "Type your answers here…"
+              : "Describe a business problem, or ask the agent to source data…"
+        }
+      />
     </div>
   )
 }
