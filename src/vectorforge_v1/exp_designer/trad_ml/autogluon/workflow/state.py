@@ -60,6 +60,7 @@ class WorkflowEvent(TypedDict):
 
 class RunState(TypedDict, total=False):
     run_id: str
+    session_id: str
     status: str
     current_round: int
     max_rounds: int
@@ -93,6 +94,7 @@ class RunState(TypedDict, total=False):
 
 class ExperimentTaskState(TypedDict):
     run_id: str
+    session_id: str
     user_request: UserRequest
     planner_decision: PlannerDecision
     experiment: dict
