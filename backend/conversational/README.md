@@ -22,7 +22,9 @@ uv sync
 uv sync --group dev
 
 # 5. Start the server
-uv run uvicorn conversational.main:app --reload --port 8000
+# PYTHONPATH must point to the parent 'backend/' directory so Python
+# can resolve 'import conversational' (the project root IS the package)
+PYTHONPATH="$(cd .. && pwd)" uv run uvicorn conversational.main:app --reload --port 8001
 ```
 
 **Required `.env` values before first run:**
@@ -38,7 +40,7 @@ uv run uvicorn conversational.main:app --reload --port 8000
 Health check — confirm the server is up:
 
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8001/health
 # {"status":"ok","graph_ready":true}
 ```
 
@@ -51,7 +53,7 @@ The API is interrupt-driven. Every step returns either an `interrupt` (needs you
 ### Step 1 — Start a session
 
 ```bash
-curl -s -X POST http://localhost:8000/api/v1/conversations \
+curl -s -X POST http://localhost:8001/api/v1/conversations \
   -H "Content-Type: application/json" \
   -d '{
     "message": "We lose 40% of enterprise accounts after year 1. Need to flag at-risk accounts 90 days before renewal and deflect common support queries to cut our $8/ticket cost."
@@ -83,7 +85,7 @@ SESSION="3f2a1b4c-..."   # paste your session_id here
 ### Step 2 — Answer clarifying questions
 
 ```bash
-curl -s -X POST http://localhost:8000/api/v1/conversations/$SESSION/respond \
+curl -s -X POST http://localhost:8001/api/v1/conversations/$SESSION/respond \
   -H "Content-Type: application/json" \
   -d '{
     "response": {
@@ -105,7 +107,7 @@ Repeat until `interrupt.type` becomes `"sub_problem_confirmation"`.
 The decomposer has mapped your problem to ML tasks. Review and confirm:
 
 ```bash
-curl -s -X POST http://localhost:8000/api/v1/conversations/$SESSION/respond \
+curl -s -X POST http://localhost:8001/api/v1/conversations/$SESSION/respond \
   -H "Content-Type: application/json" \
   -d '{"response": {"confirmed": true}}' | jq .
 ```
@@ -132,12 +134,12 @@ For each sub-problem, `interrupt.type = "dataset_source_choice"`.
 
 ```bash
 # Tell the graph you'll upload
-curl -s -X POST http://localhost:8000/api/v1/conversations/$SESSION/respond \
+curl -s -X POST http://localhost:8001/api/v1/conversations/$SESSION/respond \
   -H "Content-Type: application/json" \
   -d '{"response": {"choice": "upload"}}' | jq .
 
 # Upload the file — graph resumes automatically after S3 upload
-curl -s -X POST http://localhost:8000/api/v1/conversations/$SESSION/upload-dataset \
+curl -s -X POST http://localhost:8001/api/v1/conversations/$SESSION/upload-dataset \
   -F "problem_id=prob_1" \
   -F "file=@/path/to/churn_data.csv" | jq .
 ```
@@ -145,12 +147,12 @@ curl -s -X POST http://localhost:8000/api/v1/conversations/$SESSION/upload-datas
 **Option B — Discover from Kaggle / public datasets:**
 
 ```bash
-curl -s -X POST http://localhost:8000/api/v1/conversations/$SESSION/respond \
+curl -s -X POST http://localhost:8001/api/v1/conversations/$SESSION/respond \
   -H "Content-Type: application/json" \
   -d '{"response": {"choice": "discover"}}' | jq .
 
 # Pick from the Exa search results by index
-curl -s -X POST http://localhost:8000/api/v1/conversations/$SESSION/respond \
+curl -s -X POST http://localhost:8001/api/v1/conversations/$SESSION/respond \
   -H "Content-Type: application/json" \
   -d '{"response": {"selected_index": 0}}' | jq .
 ```
@@ -158,7 +160,7 @@ curl -s -X POST http://localhost:8000/api/v1/conversations/$SESSION/respond \
 **Option C — Skip:**
 
 ```bash
-curl -s -X POST http://localhost:8000/api/v1/conversations/$SESSION/respond \
+curl -s -X POST http://localhost:8001/api/v1/conversations/$SESSION/respond \
   -H "Content-Type: application/json" \
   -d '{"response": {"choice": "skip"}}' | jq .
 ```
@@ -167,12 +169,12 @@ After each dataset, confirm the inferred column mapping:
 
 ```bash
 # Accept inferred columns as-is
-curl -s -X POST http://localhost:8000/api/v1/conversations/$SESSION/respond \
+curl -s -X POST http://localhost:8001/api/v1/conversations/$SESSION/respond \
   -H "Content-Type: application/json" \
   -d '{"response": {"confirmed": true, "column_overrides": {}}}' | jq .
 
 # Or override a specific column name
-curl -s -X POST http://localhost:8000/api/v1/conversations/$SESSION/respond \
+curl -s -X POST http://localhost:8001/api/v1/conversations/$SESSION/respond \
   -H "Content-Type: application/json" \
   -d '{"response": {"confirmed": true, "column_overrides": {"label_column": "churned_flag"}}}' | jq .
 ```
@@ -185,12 +187,12 @@ When all datasets are sourced, `interrupt.type = "final_review"`. The response i
 
 ```bash
 # Confirm — marks session complete
-curl -s -X POST http://localhost:8000/api/v1/conversations/$SESSION/respond \
+curl -s -X POST http://localhost:8001/api/v1/conversations/$SESSION/respond \
   -H "Content-Type: application/json" \
   -d '{"response": {"confirmed": true}}' | jq .
 
 # Or regenerate the decomposition
-curl -s -X POST http://localhost:8000/api/v1/conversations/$SESSION/respond \
+curl -s -X POST http://localhost:8001/api/v1/conversations/$SESSION/respond \
   -H "Content-Type: application/json" \
   -d '{"response": {"regenerate": true}}' | jq .
 ```
@@ -200,7 +202,7 @@ curl -s -X POST http://localhost:8000/api/v1/conversations/$SESSION/respond \
 ### Step 6 — Fetch the orchestrator payload
 
 ```bash
-curl -s http://localhost:8000/api/v1/conversations/$SESSION/final-output | jq .
+curl -s http://localhost:8001/api/v1/conversations/$SESSION/final-output | jq .
 ```
 
 Pass `data` directly to your AutoGluon / AutoRAG orchestrator agent.
@@ -210,7 +212,7 @@ Pass `data` directly to your AutoGluon / AutoRAG orchestrator agent.
 ## Check session state at any time
 
 ```bash
-curl -s http://localhost:8000/api/v1/conversations/$SESSION | jq .
+curl -s http://localhost:8001/api/v1/conversations/$SESSION | jq .
 ```
 
 Returns `status`, full `messages[]` history, current `interrupt` (if paused), and `final_output` (if complete).

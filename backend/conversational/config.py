@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     # Set to false when behind a corporate TLS-inspection proxy (Zscaler etc.)
     llm_ssl_verify: bool = True
 
+    # Redis — session output cache (read by downstream orchestrators)
+    # pydantic-settings reads this from the REDIS_URL env var automatically.
+    # Default is for local dev; production uses the REDIS_URL value in .env.
+    redis_url: str = "redis://localhost:6379"
+
     # AWS RDS PostgreSQL — LangGraph checkpointing
     # Leave empty to use in-memory checkpointing for local dev/testing
     db_host: str = ""

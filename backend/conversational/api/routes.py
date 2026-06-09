@@ -38,6 +38,7 @@ from conversational.models.schemas import (
     StartConversationRequest,
     UploadDatasetResponse,
 )
+from conversational.services.redis_cache import write_session_output
 from conversational.services.s3 import upload_dataset
 
 router = APIRouter(tags=["conversations"])
@@ -62,9 +63,13 @@ async def start_conversation(
     body: StartConversationRequest,
     request: Request,
 ) -> dict[str, Any]:
-    """Create a new session and run the graph until the first interrupt."""
+    """Create a new session and run the graph until the first interrupt.
+
+    Uses the client-supplied session_id when provided so the frontend can
+    generate a UUID and correlate the session across services.
+    """
     graph = _graph(request)
-    session_id = str(uuid.uuid4())
+    session_id = body.session_id or str(uuid.uuid4())
     config = thread_config(session_id)
 
     state = initial_state(session_id=session_id, first_message=body.message)
@@ -156,13 +161,20 @@ async def respond_to_interrupt(
     result = await graph.ainvoke(Command(resume=resume_payload), config=config)
     interrupt_payload = await _get_interrupt(graph, config)
 
+    # Write the final JSON output to Redis once the conversation is complete.
+    # The output matches conv-output-schema.json exactly — orchestrators read
+    # from Redis at key vforge:conv:{session_id} without any transformation.
+    final_output = result.get("final_output")
+    if result.get("status") == "complete" and final_output:
+        await write_session_output(session_id, final_output)
+
     return {
         "data": {
             "session_id": session_id,
             "status": result.get("status", "unknown"),
             "interrupt": interrupt_payload,
             "messages": result.get("messages", []),
-            "final_output": result.get("final_output"),
+            "final_output": final_output,
         }
     }
 
@@ -248,6 +260,10 @@ async def get_final_output(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Conversation not yet complete. Current status: {current_status}.",
         )
+
+    # Write-through: ensure Redis is populated even if the respond endpoint
+    # missed the write (e.g. server restart between confirm and completion).
+    await write_session_output(session_id, final_output)
 
     return {"data": final_output}
 
