@@ -3,10 +3,11 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from app.schemas.workflow import BillingApprovalRequest, DatasetConfirmRequest, ExaRunRequest, ProblemIntakeRequest
 from app.services.demo_data import DATA_SOURCE_PATHS, DEMO_WORKSPACE, make_exa_run
+from app.services.experiment_results_stream import experiment_results_stream
 
 
 router = APIRouter(prefix="/api", tags=["workflow"])
@@ -105,3 +106,18 @@ def approve_billing(payload: BillingApprovalRequest) -> dict[str, Any]:
 @router.get("/activity")
 def activity() -> list[dict[str, Any]]:
     return DEMO_WORKSPACE["activity"]
+
+
+@router.get("/sessions/{session_id}/experiment-results")
+def experiment_results(
+    session_id: str,
+    after: str = Query("0-0"),
+    count: int = Query(100, ge=1, le=500),
+    block_ms: int = Query(0, ge=0, le=30000),
+) -> dict[str, Any]:
+    return experiment_results_stream.poll(
+        session_id=session_id,
+        after=after,
+        count=count,
+        block_ms=block_ms,
+    )

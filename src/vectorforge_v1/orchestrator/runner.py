@@ -28,6 +28,7 @@ def run_from_file(request_path: str | Path, work_dir: str | Path = "runs", execu
 def run_orchestrator(request: dict[str, Any], work_dir: str | Path = "runs", execute: bool = True) -> dict[str, Any]:
     _load_env_files()
     run_id = _new_run_id()
+    session_id = _session_id(request, run_id)
     run_dir = Path(work_dir).resolve() / run_id
     _mkdir(run_dir)
 
@@ -36,6 +37,7 @@ def run_orchestrator(request: dict[str, Any], work_dir: str | Path = "runs", exe
         run_dir / "status.json",
         {
             "run_id": run_id,
+            "session_id": session_id,
             "status": "running" if execute else "planned",
             "started_at": _utc_now(),
             "ready_for_experiments": request.get("ready_for_experiments"),
@@ -54,6 +56,7 @@ def run_orchestrator(request: dict[str, Any], work_dir: str | Path = "runs", exe
             results.append(
                 _route_autogluon_problem(
                     run_id=run_id,
+                    session_id=session_id,
                     run_dir=run_dir,
                     request=request,
                     problem=problem,
@@ -66,6 +69,7 @@ def run_orchestrator(request: dict[str, Any], work_dir: str | Path = "runs", exe
             results.append(
                 _route_autorag_problem(
                     run_id=run_id,
+                    session_id=session_id,
                     run_dir=run_dir,
                     request=request,
                     problem=problem,
@@ -84,8 +88,14 @@ def run_orchestrator(request: dict[str, Any], work_dir: str | Path = "runs", exe
             )
 
     status = "completed" if execute else "planned"
+    if execute:
+        from vectorforge_v1.utils.elasticache_pubsub import publish_end_of_message
+
+        publish_end_of_message(session_id=session_id, run_id=run_id)
+
     summary = {
         "run_id": run_id,
+        "session_id": session_id,
         "status": status,
         "run_dir": str(run_dir),
         "problem_results": results,
@@ -99,6 +109,7 @@ def run_orchestrator(request: dict[str, Any], work_dir: str | Path = "runs", exe
 def _route_autogluon_problem(
     *,
     run_id: str,
+    session_id: str,
     run_dir: Path,
     request: dict[str, Any],
     problem: dict[str, Any],
@@ -185,6 +196,7 @@ def _route_autogluon_problem(
     designer_run_id = f"{run_id}_{problem_id}_autogluon"
     initial_state = _autogluon_initial_state(
         run_id=designer_run_id,
+        session_id=session_id,
         dataset_path=str(dataset_path),
         target_column=target_column,
         problem_statement=problem_statement,
@@ -214,6 +226,7 @@ def _route_autogluon_problem(
 def _route_autorag_problem(
     *,
     run_id: str,
+    session_id: str,
     run_dir: Path,
     request: dict[str, Any],
     problem: dict[str, Any],
@@ -291,6 +304,7 @@ def _route_autorag_problem(
     final_state = build_graph().invoke(
         {
             "run_id": designer_run_dir.name,
+            "session_id": session_id,
             "docs_dir": str(Path(docs_dir).resolve()),
             "work_dir": str(designer_run_dir),
             "document_description": document_description,
@@ -508,9 +522,15 @@ def _business_context(request: dict[str, Any], problem: dict[str, Any]) -> dict[
     }
 
 
+def _session_id(request: dict[str, Any], fallback: str) -> str:
+    value = request.get("session_id") or request.get("sessionId") or request.get("id")
+    return str(value) if value else fallback
+
+
 def _autogluon_initial_state(
     *,
     run_id: str,
+    session_id: str,
     dataset_path: str,
     target_column: str | None,
     problem_statement: str,
@@ -520,6 +540,7 @@ def _autogluon_initial_state(
 ) -> dict[str, Any]:
     return {
         "run_id": run_id,
+        "session_id": session_id,
         "status": "created",
         "current_round": 0,
         "max_rounds": max_rounds,
@@ -615,9 +636,11 @@ def _load_env_files() -> None:
 
 
 def _candidate_env_paths() -> list[Path]:
+    package_root = Path(__file__).resolve().parents[1]
     repo_root = Path(__file__).resolve().parents[4]
     return [
         Path.cwd() / ".env",
+        package_root / ".env",
         repo_root / ".env",
         repo_root.parent / ".env",
     ]

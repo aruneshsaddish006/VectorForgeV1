@@ -36,6 +36,7 @@ def fan_out_experiments(state: RunState) -> list[Send]:
             "run_experiment",
             {
                 "run_id": state["run_id"],
+                "session_id": state["session_id"],
                 "user_request": state["user_request"],
                 "planner_decision": planner_decision,
                 "experiment": experiment,

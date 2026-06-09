@@ -9,6 +9,7 @@ def run_experiment(state: ExperimentTaskState) -> dict:
     planner_decision = state["planner_decision"]
     result = ExperimentRunner().run(
         run_id=state["run_id"],
+        session_id=state["session_id"],
         round_number=state["round"],
         experiment=state["experiment"],
         dataset_path=user_request["dataset_path"],

@@ -33,6 +33,8 @@ import yaml
 from langgraph.graph import END, StateGraph
 from openai import AsyncClient, OpenAI
 
+from vectorforge_v1.utils.elasticache_pubsub import publish_experiment_result
+
 
 def install_sentence_transformer_splitter_stub() -> None:
     module_name = "langchain_text_splitters.sentence_transformers"
@@ -372,6 +374,7 @@ def chunk_entry_for(module_type: str, chunk_method: str) -> dict[str, Any] | Non
 
 class AgentState(TypedDict, total=False):
     run_id: str
+    session_id: str
     docs_dir: str
     work_dir: str
     document_description: str
@@ -1641,29 +1644,28 @@ def run_experiment_round(state: AgentState) -> AgentState:
         rag_config = build_rag_config(arch, project_dir)
         rag_path = arch_dir / "rag_config.yaml"
         rag_path.write_text(yaml.safe_dump(rag_config, sort_keys=False), encoding="utf-8")
-        write_json(
-            arch_dir / "config.json",
-            {
-                "experiment_id": arch_name,
-                "round": state["current_round"],
-                "intent": arch["pipeline_type"],
-                "hypothesis": arch["reason"],
-                "config_yaml_path": path_for_report(rag_path),
-                "config": {
-                    "pipeline_type": arch["pipeline_type"],
-                    "query_expansion_method": arch["query_expansion_method"],
-                    "top_k": arch["top_k"],
-                    "final_top_k": arch["final_top_k"],
-                    "temperature": arch["temperature"],
-                    "prompt_style": arch["prompt_style"],
-                    "retrieval_metrics": arch["retrieval_metrics"],
-                    "generator_metrics": arch["generator_metrics"],
-                    "primary_metric": arch["primary_metric"],
-                    "embedding_model": arch["embedding_model"],
-                    "generator_model": arch["generator_model"],
-                },
+        config_payload = {
+            "experiment_id": arch_name,
+            "round": state["current_round"],
+            "intent": arch["pipeline_type"],
+            "hypothesis": arch["reason"],
+            "config_yaml_path": path_for_report(rag_path),
+            "config": {
+                "pipeline_type": arch["pipeline_type"],
+                "query_expansion_method": arch["query_expansion_method"],
+                "top_k": arch["top_k"],
+                "final_top_k": arch["final_top_k"],
+                "temperature": arch["temperature"],
+                "prompt_style": arch["prompt_style"],
+                "retrieval_metrics": arch["retrieval_metrics"],
+                "generator_metrics": arch["generator_metrics"],
+                "primary_metric": arch["primary_metric"],
+                "embedding_model": arch["embedding_model"],
+                "generator_model": arch["generator_model"],
             },
-        )
+        }
+        config_path = arch_dir / "config.json"
+        write_json(config_path, config_payload)
         write_json(
             arch_dir / "status.json",
             {
@@ -1715,7 +1717,19 @@ def run_experiment_round(state: AgentState) -> AgentState:
             },
             "num_gpus": 0,
         }
-        write_json(arch_dir / "metrics.json", metrics_payload)
+        metrics_path = arch_dir / "metrics.json"
+        write_json(metrics_path, metrics_payload)
+        publish_experiment_result(
+            session_id=state["session_id"],
+            designer="autorag",
+            run_id=state["run_id"],
+            round_number=state["current_round"],
+            experiment_id=arch_name,
+            config_path=config_path,
+            metrics_path=metrics_path,
+            config=config_payload,
+            metrics=metrics_payload,
+        )
         write_json(
             arch_dir / "status.json",
             {

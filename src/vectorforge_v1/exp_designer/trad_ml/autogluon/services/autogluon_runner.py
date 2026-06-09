@@ -17,6 +17,7 @@ from tqdm import tqdm
 from vectorforge_v1.exp_designer.trad_ml.autogluon.config import get_settings
 from vectorforge_v1.exp_designer.trad_ml.autogluon.services.artifacts import ArtifactStore
 from vectorforge_v1.exp_designer.trad_ml.autogluon.workflow.state import ExperimentResult
+from vectorforge_v1.utils.elasticache_pubsub import publish_experiment_result
 
 
 FALLBACK_MODEL_FAMILIES = ["RF", "XT", "LR", "KNN"]
@@ -38,6 +39,7 @@ class ExperimentRunner:
     def run(
         self,
         run_id: str,
+        session_id: str,
         round_number: int,
         experiment: dict[str, Any],
         dataset_path: str,
@@ -49,6 +51,7 @@ class ExperimentRunner:
         if get_settings().experiment_mode == "autogluon":
             return self._run_autogluon(
                 run_id,
+                session_id,
                 round_number,
                 experiment,
                 dataset_path,
@@ -57,7 +60,7 @@ class ExperimentRunner:
                 primary_metric,
                 experiments_per_round,
             )
-        return self._run_mock(run_id, round_number, experiment, primary_metric)
+        return self._run_mock(run_id, session_id, round_number, experiment, primary_metric)
 
     def _experiment_dir(self, run_id: str, round_number: int, experiment_id: str) -> Path:
         path = self.artifact_store.run_dir(run_id) / "experiments" / f"round_{round_number}" / experiment_id
@@ -67,6 +70,7 @@ class ExperimentRunner:
     def _run_mock(
         self,
         run_id: str,
+        session_id: str,
         round_number: int,
         experiment: dict[str, Any],
         primary_metric: str,
@@ -75,16 +79,18 @@ class ExperimentRunner:
         output_dir = self._experiment_dir(run_id, round_number, experiment_id)
         config_path = self.artifact_store.write_json(output_dir / "config.json", experiment)
         score = round(0.65 + (round_number * 0.03) + (int(experiment_id[-1]) * 0.01), 4)
+        metrics_payload = {
+            "primary_metric": primary_metric,
+            "primary_metric_value": score,
+            "secondary_metrics": {"precision": score, "recall": score},
+            "holdout_validation": {"mode": "mock"},
+            "mode": "mock",
+        }
         metrics_path = self.artifact_store.write_json(
             output_dir / "metrics.json",
-            {
-                "primary_metric": primary_metric,
-                "primary_metric_value": score,
-                "secondary_metrics": {"precision": score, "recall": score},
-                "holdout_validation": {"mode": "mock"},
-                "mode": "mock",
-            },
+            metrics_payload,
         )
+        self._publish_result(session_id, run_id, round_number, experiment_id, config_path, metrics_path, experiment, metrics_payload)
         model_dir = output_dir / "model"
         model_dir.mkdir(exist_ok=True)
         self.artifact_store.write_text(output_dir / "logs.txt", "Mock experiment completed.\n")
@@ -108,6 +114,7 @@ class ExperimentRunner:
     def _run_autogluon(
         self,
         run_id: str,
+        session_id: str,
         round_number: int,
         experiment: dict[str, Any],
         dataset_path: str,
@@ -343,35 +350,43 @@ class ExperimentRunner:
                         for key, value in evaluation.items()
                         if key != primary_metric and isinstance(value, int | float)
                     }
-                    metrics_path = self.artifact_store.write_json(
-                        output_dir / "metrics.json",
-                        {
-                            "primary_metric": primary_metric,
-                            "primary_metric_value": score,
-                            "secondary_metrics": secondary_metrics,
-                            "evaluation": evaluation,
-                            "holdout_validation": {
-                                "train_rows": int(len(train_data)),
-                                "holdout_rows": int(len(holdout_data)),
-                                "method": "train_test_split",
-                            },
-                            "timing": {
-                                "started_at": started_at,
-                                "elapsed_seconds": round(time.monotonic() - started_monotonic, 3),
-                                "time_limit_seconds": time_limit,
-                            },
-                            "fit_strategy": settings.autogluon_fit_strategy,
-                            "num_cpus": num_cpus,
-                            "num_gpus": settings.autogluon_num_gpus,
-                            "num_bag_folds": num_bag_folds,
-                            "num_stack_levels": num_stack_levels,
-                            "save_bag_folds": save_bag_folds,
-                            "refit_full": settings.autogluon_refit_full,
-                            "requested_model_families": requested_families,
-                            "effective_model_families": available_families,
-                            "skipped_model_families": skipped_families,
-                            "small_data_fast_mode": settings.autogluon_small_data_fast_mode,
+                    metrics_payload = {
+                        "primary_metric": primary_metric,
+                        "primary_metric_value": score,
+                        "secondary_metrics": secondary_metrics,
+                        "evaluation": evaluation,
+                        "holdout_validation": {
+                            "train_rows": int(len(train_data)),
+                            "holdout_rows": int(len(holdout_data)),
+                            "method": "train_test_split",
                         },
+                        "timing": {
+                            "started_at": started_at,
+                            "elapsed_seconds": round(time.monotonic() - started_monotonic, 3),
+                            "time_limit_seconds": time_limit,
+                        },
+                        "fit_strategy": settings.autogluon_fit_strategy,
+                        "num_cpus": num_cpus,
+                        "num_gpus": settings.autogluon_num_gpus,
+                        "num_bag_folds": num_bag_folds,
+                        "num_stack_levels": num_stack_levels,
+                        "save_bag_folds": save_bag_folds,
+                        "refit_full": settings.autogluon_refit_full,
+                        "requested_model_families": requested_families,
+                        "effective_model_families": available_families,
+                        "skipped_model_families": skipped_families,
+                        "small_data_fast_mode": settings.autogluon_small_data_fast_mode,
+                    }
+                    metrics_path = self.artifact_store.write_json(output_dir / "metrics.json", metrics_payload)
+                    self._publish_result(
+                        session_id,
+                        run_id,
+                        round_number,
+                        experiment_id,
+                        config_path,
+                        metrics_path,
+                        experiment,
+                        metrics_payload,
                     )
                     self._log_progress(
                         log_file,
@@ -421,10 +436,13 @@ class ExperimentRunner:
                 progress_completed=0,
                 progress_total=TOTAL_PHASES,
             )
-            metrics_path = self.artifact_store.write_json(
-                output_dir / "metrics.json",
-                {"primary_metric": primary_metric, "primary_metric_value": None},
-            )
+            metrics_payload = {
+                "primary_metric": primary_metric,
+                "primary_metric_value": None,
+                "error_summary": str(exc),
+            }
+            metrics_path = self.artifact_store.write_json(output_dir / "metrics.json", metrics_payload)
+            self._publish_result(session_id, run_id, round_number, experiment_id, config_path, metrics_path, experiment, metrics_payload)
             return {
                 "round": round_number,
                 "experiment_id": experiment_id,
@@ -439,6 +457,29 @@ class ExperimentRunner:
                 "holdout_metrics_path": str(metrics_path),
                 "model_manifest_path": None,
             }
+
+    def _publish_result(
+        self,
+        session_id: str,
+        run_id: str,
+        round_number: int,
+        experiment_id: str,
+        config_path: str | Path,
+        metrics_path: str | Path,
+        config: dict[str, Any],
+        metrics: dict[str, Any],
+    ) -> None:
+        publish_experiment_result(
+            session_id=session_id,
+            designer="autogluon",
+            run_id=run_id,
+            round_number=round_number,
+            experiment_id=experiment_id,
+            config_path=config_path,
+            metrics_path=metrics_path,
+            config=config,
+            metrics=metrics,
+        )
 
     def _available_model_families(
         self,
