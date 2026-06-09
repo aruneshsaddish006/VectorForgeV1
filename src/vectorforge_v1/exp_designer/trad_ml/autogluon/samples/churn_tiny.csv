@@ -1,0 +1,13 @@
+customer_id,tenure_months,monthly_charges,total_charges,contract_type,payment_method,support_tickets,is_senior,has_partner,has_dependents,churn
+C001,2,74.35,148.70,month_to_month,electronic_check,4,0,no,no,yes
+C002,34,58.95,2004.30,one_year,credit_card,1,0,yes,yes,no
+C003,8,91.20,729.60,month_to_month,electronic_check,3,1,no,no,yes
+C004,62,43.80,2715.60,two_year,bank_transfer,0,0,yes,no,no
+C005,15,82.10,1231.50,month_to_month,electronic_check,2,0,no,no,yes
+C006,48,66.40,3187.20,one_year,credit_card,1,1,yes,no,no
+C007,5,95.00,475.00,month_to_month,electronic_check,5,0,no,no,yes
+C008,71,39.25,2786.75,two_year,bank_transfer,0,0,yes,yes,no
+C009,22,77.90,1713.80,month_to_month,mailed_check,2,1,no,no,yes
+C010,55,52.10,2865.50,two_year,credit_card,0,0,yes,yes,no
+C011,11,88.45,972.95,month_to_month,electronic_check,3,0,no,no,yes
+C012,39,61.30,2390.70,one_year,bank_transfer,1,0,yes,no,no
