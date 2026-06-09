@@ -207,10 +207,14 @@ CREATE TABLE IF NOT EXISTS exa_run_events (
 CREATE TABLE IF NOT EXISTS datasets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   use_case_id UUID NOT NULL REFERENCES use_cases(id) ON DELETE CASCADE,
+  project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
   data_source_run_id UUID REFERENCES data_source_runs(id) ON DELETE SET NULL,
   name TEXT NOT NULL,
   source_type TEXT NOT NULL CHECK (source_type IN ('uploaded', 'exa', 'hybrid')),
   storage_uri TEXT,
+  s3_path TEXT,
+  data_format TEXT CHECK (data_format IN ('csv', 'pdf')),
+  data_category TEXT CHECK (data_category IN ('structured', 'unstructured')),
   row_count INTEGER NOT NULL DEFAULT 0,
   column_count INTEGER NOT NULL DEFAULT 0,
   quality_score INTEGER CHECK (quality_score BETWEEN 0 AND 100),
@@ -221,6 +225,20 @@ CREATE TABLE IF NOT EXISTS datasets (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE datasets
+  ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS s3_path TEXT,
+  ADD COLUMN IF NOT EXISTS data_format TEXT,
+  ADD COLUMN IF NOT EXISTS data_category TEXT;
+
+ALTER TABLE datasets
+  DROP CONSTRAINT IF EXISTS datasets_data_format_check,
+  ADD CONSTRAINT datasets_data_format_check CHECK (data_format IS NULL OR data_format IN ('csv', 'pdf'));
+
+ALTER TABLE datasets
+  DROP CONSTRAINT IF EXISTS datasets_data_category_check,
+  ADD CONSTRAINT datasets_data_category_check CHECK (data_category IS NULL OR data_category IN ('structured', 'unstructured'));
 
 CREATE TABLE IF NOT EXISTS dataset_columns (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -277,6 +295,7 @@ CREATE TABLE IF NOT EXISTS training_runs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   dataset_id UUID NOT NULL REFERENCES datasets(id) ON DELETE CASCADE,
   use_case_id UUID NOT NULL REFERENCES use_cases(id) ON DELETE CASCADE,
+  project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
   engine TEXT NOT NULL DEFAULT 'autogluon',
   predictor_type TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'running', 'complete', 'failed')),
@@ -285,11 +304,16 @@ CREATE TABLE IF NOT EXISTS training_runs (
   compute_cost NUMERIC(12, 4),
   train_time_seconds INTEGER,
   sagemaker_job_arn TEXT,
+  model_artifact_s3_path TEXT,
   error_message TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   started_at TIMESTAMPTZ,
   completed_at TIMESTAMPTZ
 );
+
+ALTER TABLE training_runs
+  ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS model_artifact_s3_path TEXT;
 
 CREATE TABLE IF NOT EXISTS model_leaderboard_entries (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -298,10 +322,14 @@ CREATE TABLE IF NOT EXISTS model_leaderboard_entries (
   model_name TEXT NOT NULL,
   metric_value NUMERIC(12, 6) NOT NULL,
   inference_latency_ms INTEGER,
+  artifact_s3_path TEXT,
   is_best BOOLEAN NOT NULL DEFAULT false,
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
   UNIQUE (training_run_id, rank)
 );
+
+ALTER TABLE model_leaderboard_entries
+  ADD COLUMN IF NOT EXISTS artifact_s3_path TEXT;
 
 CREATE TABLE IF NOT EXISTS feature_importances (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

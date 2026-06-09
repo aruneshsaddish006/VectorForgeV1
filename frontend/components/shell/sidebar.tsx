@@ -31,7 +31,6 @@ type NavItem = {
   id: string
   label: string
   icon: React.ElementType
-  badge?: string
 }
 
 const PRIMARY_NAV: NavItem[] = [
@@ -54,15 +53,18 @@ const SECONDARY_NAV: NavItem[] = [
 export function Sidebar({
   selectedWorkspace,
   selectedProject,
+  activeView,
   onWorkspaceChange,
   onProjectChange,
+  onViewChange,
 }: {
   selectedWorkspace: Workspace | null
   selectedProject: Project | null
+  activeView: string
   onWorkspaceChange: (workspace: Workspace) => void
   onProjectChange: (project: Project) => void
+  onViewChange: (view: string) => void
 }) {
-  const [active, setActive] = React.useState("use-cases")
   const [workspaces, setWorkspaces] = React.useState<Workspace[]>([])
   const [projects, setProjects] = React.useState<Project[]>([])
   const [dialog, setDialog] = React.useState<"workspace" | "project" | null>(null)
@@ -138,7 +140,7 @@ export function Sidebar({
       })
       setProjects((items) => [project, ...items])
       onProjectChange(project)
-      setActive("projects")
+      onViewChange("projects")
       setDialog(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create project.")
@@ -147,37 +149,17 @@ export function Sidebar({
     }
   }
 
-  const workspaceInitial = selectedWorkspace?.name?.charAt(0).toUpperCase() || (loading ? "..." : "+")
-
   return (
     <>
       <aside className="relative z-[70] flex w-[52px] shrink-0 overflow-visible pr-2 sm:w-[58px]" aria-label="Primary navigation">
         <div className="app-panel flex h-full w-full flex-col items-center overflow-visible rounded-[20px] px-1.5 py-3 sm:rounded-[22px]">
-          <button
-            onClick={() => {
-              setError(null)
-              setDialog("workspace")
-            }}
-            className="app-accent-shadow group relative mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-primary text-sm font-bold text-primary-foreground transition hover:bg-primary-dark"
-            aria-label="Create or switch workspace"
-          >
-            {workspaceInitial}
-            <TooltipLabel>{selectedWorkspace?.name || "Create workspace"}</TooltipLabel>
-          </button>
-
           <nav className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-visible">
             {PRIMARY_NAV.map((item) => (
               <NavButton
                 key={item.id}
-                item={
-                  item.id === "projects"
-                    ? { ...item, badge: String(projects.length) }
-                    : item.id === "datasets" || item.id === "models"
-                      ? { ...item, badge: selectedProject ? "1" : "0" }
-                      : item
-                }
-                active={active === item.id}
-                onClick={() => setActive(item.id)}
+                item={item}
+                active={activeView === item.id}
+                onClick={() => onViewChange(item.id)}
               />
             ))}
           </nav>
@@ -198,8 +180,8 @@ export function Sidebar({
               <NavButton
                 key={item.id}
                 item={item}
-                active={active === item.id}
-                onClick={() => setActive(item.id)}
+                active={activeView === item.id}
+                onClick={() => onViewChange(item.id)}
               />
             ))}
           </div>
@@ -324,11 +306,6 @@ function NavButton({
     >
       <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
       <TooltipLabel>{item.label}</TooltipLabel>
-      {item.badge && (
-        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground ring-2 ring-surface-raised">
-          {item.badge}
-        </span>
-      )}
     </button>
   )
 }
