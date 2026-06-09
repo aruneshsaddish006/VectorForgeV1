@@ -87,9 +87,11 @@ def _load_env_files() -> None:
 def _candidate_env_paths() -> list[Path]:
     backend_root = Path(__file__).resolve().parents[2]
     repo_root = backend_root.parent
-    package_root = repo_root / "src" / "vectorforge_v1"
+    modelbuilder_root = backend_root / "modelbuilder"
+    package_root = modelbuilder_root / "src" / "vectorforge_v1"
     return [
         Path.cwd() / ".env",
+        modelbuilder_root / ".env",
         backend_root / ".env",
         repo_root / ".env",
         repo_root.parent / ".env",
