@@ -13,27 +13,30 @@ export default function DashboardPage() {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
 
   return (
-    <div className="flex h-dvh w-full overflow-hidden bg-canvas text-foreground">
-      <Sidebar
+    <div className="flex h-dvh w-full flex-col overflow-hidden bg-canvas p-3 text-foreground sm:p-4">
+      <TopBar
         selectedWorkspace={selectedWorkspace}
         selectedProject={selectedProject}
-        onWorkspaceChange={(workspace) => {
-          setSelectedWorkspace(workspace)
-          setSelectedProject(null)
-        }}
-        onProjectChange={setSelectedProject}
+        inspectorOpen={inspectorOpen}
+        onToggleInspector={() => setInspectorOpen((v) => !v)}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar inspectorOpen={inspectorOpen} onToggleInspector={() => setInspectorOpen((v) => !v)} />
+      <div className="mt-3 flex min-h-0 flex-1 gap-3 sm:mt-4 sm:gap-4">
+        <Sidebar
+          selectedWorkspace={selectedWorkspace}
+          selectedProject={selectedProject}
+          onWorkspaceChange={(workspace) => {
+            setSelectedWorkspace(workspace)
+            setSelectedProject(null)
+          }}
+          onProjectChange={setSelectedProject}
+        />
 
-        <div className="flex min-h-0 flex-1">
-          <main className="min-w-0 flex-1 bg-canvas">
-            <ChatThread selectedWorkspace={selectedWorkspace} selectedProject={selectedProject} />
-          </main>
+        <main className="app-panel min-w-0 flex-1 overflow-hidden rounded-[28px]">
+          <ChatThread selectedWorkspace={selectedWorkspace} selectedProject={selectedProject} />
+        </main>
 
-          <Inspector open={inspectorOpen} />
-        </div>
+        <Inspector open={inspectorOpen} />
       </div>
     </div>
   )

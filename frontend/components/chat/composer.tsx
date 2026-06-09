@@ -13,14 +13,14 @@ const SUGGESTIONS = [
 export function Composer() {
   const [value, setValue] = React.useState("")
   return (
-    <div className="border-t border-border bg-surface px-4 py-3 sm:px-6">
-      <div className="mx-auto max-w-3xl">
+    <div className="border-t border-border bg-surface-panel px-4 py-3 backdrop-blur-xl sm:px-6">
+      <div className="mx-auto max-w-5xl">
         <div className="mb-2 flex flex-wrap gap-2">
           {SUGGESTIONS.map((s) => (
             <button
               key={s}
               onClick={() => setValue(s)}
-              className="flex items-center gap-1.5 rounded-full border border-border bg-surface-muted/60 px-3 py-1 text-xs font-medium text-muted-foreground hover:border-primary/40 hover:text-foreground"
+              className="app-control flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold text-muted-foreground hover:border-primary/40 hover:text-foreground"
             >
               <Sparkles className="h-3 w-3 text-primary" aria-hidden="true" />
               {s}
@@ -30,7 +30,7 @@ export function Composer() {
 
         <form
           onSubmit={(e) => e.preventDefault()}
-          className="flex items-end gap-2 rounded-xl border border-border bg-surface p-2 shadow-sm focus-within:border-primary/50"
+          className="app-panel-raised flex items-end gap-2 rounded-[22px] p-2 focus-within:border-primary/50"
         >
           <Button type="button" variant="ghost" size="icon" aria-label="Attach file" className="shrink-0">
             <Paperclip className="h-5 w-5" aria-hidden="true" />

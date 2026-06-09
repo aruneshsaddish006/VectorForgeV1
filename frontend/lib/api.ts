@@ -161,6 +161,12 @@ export function persistAuthSession(auth: AuthResponse) {
   }
 }
 
+export function clearAuthSession() {
+  window.localStorage.removeItem("forge_ai_token")
+  window.localStorage.removeItem("forge_ai_user")
+  window.localStorage.removeItem("forge_ai_workspace")
+}
+
 export function createWorkspace(payload: { name: string }): Promise<Workspace> {
   return postWithAuth<Workspace>("/api/workspaces", payload)
 }
@@ -190,10 +196,11 @@ export function fetchProjectAssets(workspaceId: string, projectId: string): Prom
 export async function logoutUser(): Promise<void> {
   try {
     await postWithAuth<{ status: string }>("/api/auth/logout")
+  } catch {
+    // Local logout should still succeed if the server session is already gone
+    // or the backend is temporarily unavailable.
   } finally {
-    window.localStorage.removeItem("forge_ai_token")
-    window.localStorage.removeItem("forge_ai_user")
-    window.localStorage.removeItem("forge_ai_workspace")
+    clearAuthSession()
   }
 }
 

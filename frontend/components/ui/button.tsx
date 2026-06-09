@@ -6,12 +6,12 @@ type ButtonSize = "sm" | "md" | "lg" | "icon"
 
 const VARIANTS: Record<ButtonVariant, string> = {
   primary:
-    "bg-primary text-primary-foreground hover:bg-primary-dark active:bg-primary-dark shadow-sm",
+    "bg-primary text-primary-foreground hover:bg-primary-dark active:bg-primary-dark app-accent-shadow",
   secondary:
-    "bg-surface-muted text-foreground hover:bg-border/70 border border-border",
+    "app-control text-foreground",
   outline:
-    "bg-surface text-foreground border border-border hover:bg-surface-muted",
-  ghost: "text-muted-foreground hover:bg-surface-muted hover:text-foreground",
+    "app-control text-foreground",
+  ghost: "text-muted-foreground hover:bg-surface-raised/70 hover:text-foreground",
   danger: "bg-error text-white hover:opacity-90 shadow-sm",
   success: "bg-success text-white hover:opacity-90 shadow-sm",
 }
