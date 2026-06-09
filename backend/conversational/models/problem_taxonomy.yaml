@@ -1,0 +1,403 @@
+# VectorForge ML Problem Taxonomy
+# Derived from AutoGluon stable docs: https://auto.gluon.ai/stable/
+# and AutoRAG docs: https://docs.auto-rag.com/
+#
+# autogluon_problem_type must match AutoGluon's problem_type parameter exactly.
+# predictor_class indicates which AutoGluon predictor to use.
+
+traditional:
+
+  # -------------------------------------------------------------------
+  # TabularPredictor: binary / multiclass / regression / quantile
+  # -------------------------------------------------------------------
+
+  - id: tabular_binary_classification
+    name: "Binary Classification"
+    category: traditional
+    engine: autogluon
+    predictor_class: "autogluon.tabular.TabularPredictor"
+    autogluon_problem_type: binary  # AutoGluon param: problem_type='binary'
+    description: >
+      Predict a binary yes/no outcome from structured tabular data.
+      AutoGluon auto-trains GBM, XGBoost, CatBoost, NN, RF and stacks
+      them into an ensemble. Ideal when the target column has exactly
+      two distinct values.
+    supported_eval_metrics:
+      # Higher is better for all except log_loss (AutoGluon flips sign internally)
+      - f1            # default for imbalanced binary problems
+      - roc_auc
+      - accuracy
+      - recall
+      - precision
+      - log_loss
+      - balanced_accuracy
+    default_eval_metric: f1
+    business_examples:
+      - customer churn prediction
+      - credit card fraud detection
+      - lead conversion scoring
+      - employee attrition
+      - equipment failure detection
+      - loan default prediction
+    keywords:
+      - churn
+      - fraud
+      - predict whether
+      - yes or no
+      - at risk
+      - convert
+      - default
+      - binary
+      - will
+      - is likely to
+    inferred_columns:
+      label_column:
+        description: "Binary target — boolean, 0/1 integer, or two-value string column"
+        required: true
+    min_rows: 300
+
+  - id: tabular_multiclass_classification
+    name: "Multi-class Classification"
+    category: traditional
+    engine: autogluon
+    predictor_class: "autogluon.tabular.TabularPredictor"
+    autogluon_problem_type: multiclass  # AutoGluon param: problem_type='multiclass'
+    description: >
+      Classify rows into three or more discrete categories from tabular data.
+      AutoGluon handles class imbalance and optimises for the chosen metric.
+    supported_eval_metrics:
+      - accuracy       # default for balanced multiclass
+      - balanced_accuracy
+      - f1_macro
+      - f1_micro
+      - f1_weighted
+      - log_loss
+    default_eval_metric: accuracy
+    business_examples:
+      - support ticket routing (billing / technical / general)
+      - customer intent classification (purchase / browse / support)
+      - product category prediction
+      - document type classification
+      - failure root-cause classification
+    keywords:
+      - categorise
+      - classify
+      - routing
+      - intent
+      - type of
+      - category
+      - segment into
+      - which bucket
+      - multi-class
+      - three or more
+    inferred_columns:
+      label_column:
+        description: "Categorical column with 3+ distinct class values"
+        required: true
+      class_labels:
+        description: "List of all distinct class names (inferred from problem description)"
+        required: true
+    min_rows: 500
+
+  - id: tabular_regression
+    name: "Regression (Continuous Prediction)"
+    category: traditional
+    engine: autogluon
+    predictor_class: "autogluon.tabular.TabularPredictor"
+    autogluon_problem_type: regression  # AutoGluon param: problem_type='regression'
+    description: >
+      Predict a continuous numeric value from tabular data.
+      AutoGluon ensembles GBM, XGBoost, CatBoost, NN regressors.
+    supported_eval_metrics:
+      - root_mean_squared_error   # default for regression (AutoGluon flips sign)
+      - mean_absolute_error
+      - mean_squared_error
+      - median_absolute_error
+      - r2
+      - mean_absolute_percentage_error
+    default_eval_metric: root_mean_squared_error
+    business_examples:
+      - customer lifetime value (LTV) prediction
+      - property / listing price estimation
+      - insurance claim amount prediction
+      - salary band estimation
+      - demand unit prediction (per order, not time series)
+    keywords:
+      - how much
+      - predict value
+      - revenue
+      - price
+      - score
+      - ltv
+      - amount
+      - estimate
+      - continuous
+      - numeric outcome
+    inferred_columns:
+      label_column:
+        description: "Continuous numeric target column (float or integer)"
+        required: true
+    min_rows: 300
+
+  # -------------------------------------------------------------------
+  # TimeSeriesPredictor — autogluon.timeseries
+  # -------------------------------------------------------------------
+
+  - id: time_series_forecasting
+    name: "Time Series Forecasting"
+    category: traditional
+    engine: autogluon
+    predictor_class: "autogluon.timeseries.TimeSeriesPredictor"
+    autogluon_problem_type: null   # TimeSeriesPredictor does not use problem_type
+    description: >
+      Forecast future values of one or many time series using
+      autogluon.timeseries.TimeSeriesPredictor. Supports DeepAR, PatchTST,
+      Chronos, statistical baselines (ETS, ARIMA) and ensembles.
+      Data must be in long format with item_id and timestamp columns.
+    supported_eval_metrics:
+      - WQL             # Weighted Quantile Loss — default
+      - MASE            # Mean Absolute Scaled Error
+      - WAPE            # Weighted Absolute Percentage Error
+      - MAPE
+      - sMAPE
+      - MSE
+      - RMSE
+    default_eval_metric: WQL
+    business_examples:
+      - weekly sales demand forecasting
+      - inventory / replenishment planning
+      - energy consumption prediction
+      - website traffic forecasting
+      - store-level revenue forecasting
+    keywords:
+      - forecast
+      - time series
+      - weekly
+      - monthly
+      - daily
+      - trend
+      - seasonal
+      - future demand
+      - predict next N
+      - horizon
+    inferred_columns:
+      target_column:
+        description: "Numeric column to forecast (e.g. units_sold, revenue)"
+        required: true
+      timestamp_column:
+        description: "Datetime column — ISO8601 or pandas-parseable date string"
+        required: true
+      item_id_column:
+        description: "Identifier for each individual time series (e.g. product_id, store_id). Set to a constant if only one series."
+        required: true
+    min_rows: 200
+
+  # -------------------------------------------------------------------
+  # MultiModalPredictor — text / image / document tasks
+  # -------------------------------------------------------------------
+
+  - id: text_classification
+    name: "Text / NLP Classification"
+    category: traditional
+    engine: autogluon
+    predictor_class: "autogluon.multimodal.MultiModalPredictor"
+    autogluon_problem_type: multiclass   # or binary; MultiModalPredictor infers
+    description: >
+      Classify text documents using AutoGluon MultiModalPredictor with
+      pretrained transformer backbones (BERT, RoBERTa, DeBERTa).
+      Works for binary and multi-class text classification tasks.
+    supported_eval_metrics:
+      - accuracy
+      - f1
+      - roc_auc
+    default_eval_metric: accuracy
+    business_examples:
+      - customer review sentiment analysis
+      - support ticket intent classification
+      - email category routing
+      - product review star prediction
+    keywords:
+      - text
+      - sentiment
+      - nlp
+      - review
+      - classify text
+      - message
+      - email classification
+      - natural language
+    inferred_columns:
+      text_column:
+        description: "String column containing the raw text to classify"
+        required: true
+      label_column:
+        description: "Categorical class label"
+        required: true
+    min_rows: 200
+
+  - id: image_classification
+    name: "Image Classification"
+    category: traditional
+    engine: autogluon
+    predictor_class: "autogluon.multimodal.MultiModalPredictor"
+    autogluon_problem_type: multiclass   # or binary
+    description: >
+      Classify images using AutoGluon MultiModalPredictor with pretrained
+      vision models (CLIP, SwinTransformer, etc.). Requires a column of
+      image file paths in the dataset.
+    supported_eval_metrics:
+      - accuracy
+      - f1
+      - roc_auc
+    default_eval_metric: accuracy
+    business_examples:
+      - product quality / defect detection on assembly lines
+      - retail shelf planogram compliance
+      - document type classification (invoice vs. receipt vs. contract)
+      - medical image screening (X-ray, microscopy)
+    keywords:
+      - image
+      - photo
+      - visual
+      - camera
+      - defect
+      - picture
+      - scan
+      - computer vision
+    inferred_columns:
+      image_path_column:
+        description: "String column containing local file paths or URLs to image files"
+        required: true
+      label_column:
+        description: "Categorical class label"
+        required: true
+    min_rows: 100
+
+  - id: ner
+    name: "Named Entity Recognition (NER)"
+    category: traditional
+    engine: autogluon
+    predictor_class: "autogluon.multimodal.MultiModalPredictor"
+    autogluon_problem_type: ner   # MultiModalPredictor(problem_type='ner')
+    description: >
+      Extract structured entities (person, org, date, product, etc.) from
+      unstructured text using AutoGluon MultiModalPredictor with problem_type='ner'.
+    supported_eval_metrics:
+      - overall_f1
+      - overall_recall
+      - overall_precision
+    default_eval_metric: overall_f1
+    business_examples:
+      - extracting product names from support tickets
+      - extracting dates and amounts from contracts
+      - extracting company/person names from news feeds
+    keywords:
+      - entity extraction
+      - ner
+      - named entity
+      - extract
+      - information extraction
+      - structured from text
+    inferred_columns:
+      text_column:
+        description: "Column name containing the text to extract entities from (pass as key in dict: {'text_snippet': [...]})"
+        required: true
+      entity_annotations_column:
+        description: "Column with NER annotation labels (entity spans)"
+        required: true
+    min_rows: 100
+
+genai:
+
+  # -------------------------------------------------------------------
+  # AutoRAG — RAG pipeline optimisation
+  # -------------------------------------------------------------------
+
+  - id: rag_question_answering
+    name: "RAG Question Answering"
+    category: genai
+    engine: autorag
+    autorag_task_type: qa
+    description: >
+      Optimise a RAG pipeline that retrieves documents and generates answers
+      to questions. AutoRAG benchmarks combinations of chunking, embedding,
+      retrieval, reranking, and generation nodes to find the best pipeline.
+      Requires a corpus file and a QA evaluation file in AutoRAG format.
+    business_examples:
+      - customer support query deflection (deflect tickets to KB answers)
+      - internal HR / IT / legal policy QA bot
+      - product documentation assistant
+      - compliance and regulatory QA
+    keywords:
+      - support deflection
+      - answer questions
+      - knowledge base
+      - faq
+      - chatbot
+      - policy questions
+      - documentation assistant
+      - automate answers
+    required_files:
+      corpus:
+        format: CSV or Parquet
+        required_columns:
+          doc_id:
+            description: "Unique identifier for each document (string)"
+          contents:
+            description: "Full text of the document chunk"
+        optional_columns:
+          metadata: "Dict of metadata fields (source URL, page number, etc.)"
+      qa_eval:
+        format: CSV or Parquet
+        required_columns:
+          qid:
+            description: "Unique identifier for each question"
+          query:
+            description: "Question text"
+          retrieval_gt:
+            description: "List of relevant doc_ids (ground truth for retrieval eval)"
+          generation_gt:
+            description: "Expected answer text (ground truth for generation quality eval)"
+    min_corpus_docs: 50
+    min_qa_pairs: 30
+
+  - id: rag_document_retrieval
+    name: "RAG Document Retrieval / Semantic Search"
+    category: genai
+    engine: autorag
+    autorag_task_type: retrieval
+    description: >
+      Optimise a document retrieval pipeline for semantic search or knowledge
+      lookup. AutoRAG finds the best embedding model, retrieval algorithm,
+      and reranker combination. Does not require generation ground truth.
+    business_examples:
+      - enterprise knowledge base semantic search
+      - legal document discovery
+      - product catalogue search
+      - academic paper retrieval
+    keywords:
+      - search
+      - find documents
+      - semantic search
+      - retrieve
+      - lookup
+      - knowledge discovery
+      - similarity search
+    required_files:
+      corpus:
+        format: CSV or Parquet
+        required_columns:
+          doc_id:
+            description: "Unique identifier for each document (string)"
+          contents:
+            description: "Full text of the document chunk"
+      queries:
+        format: CSV or Parquet
+        required_columns:
+          qid:
+            description: "Unique query identifier"
+          query:
+            description: "Search query text"
+          retrieval_gt:
+            description: "List of relevant doc_ids (ground truth for retrieval eval)"
+    min_corpus_docs: 30
+    min_query_pairs: 20

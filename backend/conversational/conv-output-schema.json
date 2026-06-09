@@ -1,0 +1,62 @@
+{
+    "business_problem": "We lose 40% of enterprise accounts after year 1. We need to flag at-risk accounts 90 days before renewal and deflect common support queries to reduce $8/ticket cost.",
+    "domain": "saas",
+    "constraint_summary": "CRM data, NPS scores, and support ticket history are available and sufficient for a churn prediction model. Product telemetry is not instrumented, ruling out usage-pattern anomaly detection. Email outreach via Mailchimp is available for win-back campaigns. No PII or regulatory blockers identified.",
+    "ml_problems": [
+        {
+            "id": "prob_1",
+            "name": "Churn Prediction",
+            "description": "Predict which B2B accounts are at risk of churning within 90 days of renewal, using ARR, NPS score, support ticket volume, and contract age as predictors.",
+            "category": "traditional",
+            "engine": "autogluon",
+            "autogluon_task_type": "binary_classification",
+            "hypothesis_evidence": [
+                "Accounts with NPS ≤ 2 churn at 84% vs 38% baseline (chi-sq p=0.0001) — strong signal",
+                "Accounts with >20 support tickets/month churn at 71% vs 38% (lift=1.87) — strong signal"
+            ],
+            "business_kpis": [
+                "Reduce logo churn by 15% over two quarters",
+                "Flag at-risk accounts 90 days before renewal to enable proactive CSM outreach"
+            ],
+            "dataset": {
+                "description": "Historical B2B SaaS account records with binary churn label. Each row is one account measurement period.",
+                "target_column": {
+                    "inferred_name": "churned",
+                    "type": "binary",
+                    "reason": "Binary churn outcome — direct target for binary_classification task"
+                },
+                "source": {
+                    "s3_path": "s3://vforge-datasets/sess_a1b2c3d4/prob_1/dataset.csv",
+                    "row_count": 1000
+                }
+            }
+        },
+        {
+            "id": "prob_2",
+            "name": "Support Query Deflection",
+            "description": "Build a RAG pipeline that answers common support queries from a knowledge base, deflecting tickets that don't need human resolution.",
+            "category": "genai",
+            "engine": "autorag",
+            "autogluon_task_type": null,
+            "hypothesis_evidence": [
+                "200 tickets/day × $8/ticket = $584K/year — high cost-reduction opportunity",
+                "Help centre corpus is available (850 articles) — RAG is directly feasible"
+            ],
+            "business_kpis": [
+                "Deflect 30% of inbound support tickets to automated RAG answers",
+                "Reduce cost-per-support-interaction from $8 to under $3"
+            ],
+            "dataset": {
+                "description": "AutoRAG requires two files: (1) corpus.csv — knowledge base documents (doc_id, contents); (2) qa_eval.csv — ground-truth QA pairs (qid, query, retrieval_gt, generation_gt).",
+                "source": {
+                    "s3_path": "s3://vforge-datasets/sess_a1b2c3d4/prob_2/corpus.csv",
+                    "row_count": 1000
+                }
+            }
+        }
+    ],
+    "session_cost_usd": 0.12,
+    "ready_for_experiments": true,
+    "max_experiment_per_round": 3,
+    "num_round": 3
+}
