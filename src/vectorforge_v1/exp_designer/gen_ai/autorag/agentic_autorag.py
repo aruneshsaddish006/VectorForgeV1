@@ -20,15 +20,40 @@ import json
 import os
 import re
 import shutil
+import sys
 import time
+import types
 import uuid
 from pathlib import Path
 from typing import Any, TypedDict
 
+import httpx
 import pandas as pd
 import yaml
 from langgraph.graph import END, StateGraph
 from openai import AsyncClient, OpenAI
+
+
+def install_sentence_transformer_splitter_stub() -> None:
+    module_name = "langchain_text_splitters.sentence_transformers"
+    if module_name in sys.modules:
+        return
+
+    module = types.ModuleType(module_name)
+
+    class SentenceTransformersTokenTextSplitter:
+        def __init__(self, *args, **kwargs):
+            raise ImportError(
+                "SentenceTransformersTokenTextSplitter is disabled in VectorForge's non-GPU AutoRAG path. "
+                "Use token, recursivecharacter, character, sentence, semantic_llama_index, "
+                "semanticdoublemerging, sentencewindow, or simplefile chunking."
+            )
+
+    module.SentenceTransformersTokenTextSplitter = SentenceTransformersTokenTextSplitter
+    sys.modules[module_name] = module
+
+
+install_sentence_transformer_splitter_stub()
 
 from autorag.chunker import Chunker
 from autorag.data.qa.filter.dontknow import dontknow_filter_rule_based
@@ -186,6 +211,69 @@ DEFAULT_EMBEDDING_MODEL = "openai_embed_3_small"
 DEFAULT_GEVAL_MODEL = "gpt-4o-mini-2024-07-18"
 DEFAULT_MAX_ROUNDS = 3
 DEFAULT_ARCHITECTURES_PER_ROUND = 3
+UNSUPPORTED_NON_GPU_CHUNK_METHODS = {
+    "semantic_llama_index",
+    "semanticdoublemerging",
+    "sentencewindow",
+}
+
+
+def openai_client() -> OpenAI:
+    return OpenAI(http_client=httpx.Client(verify=False))
+
+
+def async_openai_client() -> AsyncClient:
+    return AsyncClient(http_client=httpx.AsyncClient(verify=False))
+
+
+def patch_openai_clients_for_local_ssl() -> None:
+    import openai
+
+    if getattr(openai, "_vectorforge_no_verify_patch", False):
+        return
+
+    original_openai = openai.OpenAI
+    original_async_openai = openai.AsyncOpenAI
+
+    class NoVerifyOpenAI(original_openai):
+        def __init__(self, *args, **kwargs):
+            if kwargs.get("http_client") is None:
+                kwargs["http_client"] = httpx.Client(verify=False)
+            super().__init__(*args, **kwargs)
+
+    class NoVerifyAsyncOpenAI(original_async_openai):
+        def __init__(self, *args, **kwargs):
+            if kwargs.get("http_client") is None:
+                kwargs["http_client"] = httpx.AsyncClient(verify=False)
+            super().__init__(*args, **kwargs)
+
+    openai.OpenAI = NoVerifyOpenAI
+    openai.AsyncOpenAI = NoVerifyAsyncOpenAI
+    openai._vectorforge_no_verify_patch = True
+
+    try:
+        import autorag.nodes.generator.openai_llm as openai_llm
+
+        openai_llm.AsyncOpenAI = NoVerifyAsyncOpenAI
+    except Exception:
+        pass
+
+    try:
+        import autorag.evaluation.metric.generation as generation_metric
+
+        generation_metric.AsyncOpenAI = NoVerifyAsyncOpenAI
+    except Exception:
+        pass
+
+    try:
+        import llama_index.embeddings.openai.base as llama_openai_embedding
+
+        llama_openai_embedding.OpenAI = NoVerifyOpenAI
+        llama_openai_embedding.AsyncOpenAI = NoVerifyAsyncOpenAI
+    except Exception:
+        pass
+
+
 SAFE_RAG_PIPELINE_CATALOG = [
     {
         "pipeline_type": "semantic_only",
@@ -213,6 +301,8 @@ def slugify(value: str) -> str:
 
 
 def dependency_available(dependency: str | None) -> bool:
+    if dependency == "sentence_transformers":
+        return False
     return dependency is None or importlib.util.find_spec(dependency) is not None
 
 
@@ -253,7 +343,13 @@ def available_parse_catalog() -> list[dict[str, Any]]:
 
 def available_chunk_catalog() -> list[dict[str, Any]]:
     return [
-        {**entry, "available": dependency_available(entry.get("dependency"))}
+        {
+            **entry,
+            "available": (
+                dependency_available(entry.get("dependency"))
+                and entry["method"] not in UNSUPPORTED_NON_GPU_CHUNK_METHODS
+            ),
+        }
         for entry in CHUNK_MODULE_CATALOG
         if not entry["api_key"]
     ]
@@ -280,6 +376,7 @@ class AgentState(TypedDict, total=False):
     work_dir: str
     document_description: str
     optimize_for: str
+    qa_sample_count: int
     max_rounds: int
     architectures_per_round: int
     profile: dict[str, Any]
@@ -662,7 +759,7 @@ Keep it simple. Prefer 1 parser per file type and 1-2 chunk candidates.
 Use the human content description to choose parsing and chunking strategies. For example, table/image-heavy PDFs often deserve robust PDF parsing and conservative overlapping chunks.
 Only choose entries marked runnable/available. Do not choose OCR or API-key parser modules.
 """
-    client = OpenAI()
+    client = openai_client()
     response = client.responses.create(
         model=os.environ.get("AUTORAG_AGENT_MODEL", DEFAULT_RAG_MODEL),
         input=[
@@ -702,6 +799,8 @@ def validate_plan(plan: dict[str, Any], profile: dict[str, Any]) -> dict[str, An
             raise ValueError(f"Unsupported chunk module_type: {module_type}")
         if entry["api_key"]:
             raise ValueError(f"Unsupported/API chunk method: {chunk_method}")
+        if chunk_method in UNSUPPORTED_NON_GPU_CHUNK_METHODS:
+            raise ValueError(f"Chunk method is disabled for non-GPU AutoRAG runs: {chunk_method}")
         if not dependency_available(entry.get("dependency")):
             raise ValueError(f"Chunk dependency is not installed for {chunk_method}: {entry.get('dependency')}")
         if entry.get("requires_local_embedding") and "embed_model" not in module:
@@ -739,6 +838,8 @@ def normalize_plan(plan: dict[str, Any], profile: dict[str, Any]) -> dict[str, A
     normalized_chunk_modules = []
     for module in plan.get("chunk_modules", []):
         chunk_method = str(module.get("chunk_method") or module.get("method") or module.get("module") or "").lower()
+        if chunk_method in UNSUPPORTED_NON_GPU_CHUNK_METHODS:
+            continue
         module_type = module.get("module_type")
         if not module_type and chunk_method:
             matches = [
@@ -758,6 +859,27 @@ def normalize_plan(plan: dict[str, Any], profile: dict[str, Any]) -> dict[str, A
         normalized_chunk_modules.append(
             normalized_module
         )
+
+    if not normalized_chunk_modules:
+        runnable = profile.get("runnable_chunk_methods") or []
+        preferred = next(
+            (
+                entry
+                for entry in runnable
+                if entry["chunk_method"] in {"recursivecharacter", "sentence", "token", "character", "simplefile"}
+            ),
+            runnable[0] if runnable else None,
+        )
+        if preferred:
+            normalized_chunk_modules.append(
+                {
+                    "module_type": preferred["module_type"],
+                    "chunk_method": preferred["chunk_method"],
+                    "chunk_size": 1024,
+                    "chunk_overlap": 128,
+                    "add_file_name": "en",
+                }
+            )
 
     return {
         **plan,
@@ -944,7 +1066,7 @@ Each architecture object must include:
 
 Do not add GPU modules, local model serving, external reranker APIs, passage_filter, passage_reranker, or unsupported stages.
 """
-    client = OpenAI()
+    client = openai_client()
     response = client.responses.create(
         model=os.environ.get("AUTORAG_AGENT_MODEL", DEFAULT_RAG_MODEL),
         input=[
@@ -1411,14 +1533,16 @@ def run_parse_and_chunk(state: AgentState) -> AgentState:
 
 
 def create_qa(state: AgentState) -> AgentState:
+    patch_openai_clients_for_local_ssl()
     work_dir = Path(state["work_dir"]).resolve()
     raw_df = pd.read_parquet(state["raw_path"], engine="pyarrow")
     corpus_df = pd.read_parquet(state["corpus_path"], engine="pyarrow")
-    sample_count = min(int(os.environ.get("AUTORAG_AGENT_QA_SAMPLES", "24")), len(corpus_df))
+    configured_sample_count = state.get("qa_sample_count") or os.environ.get("AUTORAG_AGENT_QA_SAMPLES", "24")
+    sample_count = min(int(configured_sample_count), len(corpus_df))
     if sample_count <= 0:
         raise ValueError("No corpus rows available for QA generation")
 
-    client = AsyncClient()
+    client = async_openai_client()
     corpus = Corpus(corpus_df, Raw(raw_df))
     qa = (
         corpus.sample(random_single_hop, n=sample_count, random_state=42)
@@ -1434,6 +1558,7 @@ def create_qa(state: AgentState) -> AgentState:
 
 
 def run_optimization(state: AgentState) -> AgentState:
+    patch_openai_clients_for_local_ssl()
     project_dir = Path(state["work_dir"]).resolve() / "optimization_project"
     if project_dir.exists():
         shutil.rmtree(project_dir)
@@ -1497,6 +1622,7 @@ def flatten_metrics(node_summaries: dict[str, list[dict[str, Any]]]) -> dict[str
 
 
 def run_experiment_round(state: AgentState) -> AgentState:
+    patch_openai_clients_for_local_ssl()
     work_dir = Path(state["work_dir"]).resolve()
     round_dir = run_subdirs(work_dir)["experiments"] / f"round_{state['current_round']}"
     round_dir.mkdir(parents=True, exist_ok=True)
@@ -2037,6 +2163,7 @@ def main() -> int:
             "optimize_for": args.optimize_for,
             "max_rounds": args.rounds,
             "architectures_per_round": args.architectures_per_round,
+            "qa_sample_count": int(os.environ.get("AUTORAG_AGENT_QA_SAMPLES", "24")),
             "current_round": 1,
             "experiment_history": [],
             "architecture_rationale_paths": [],

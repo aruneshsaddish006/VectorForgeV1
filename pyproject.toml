@@ -17,6 +17,7 @@ dependencies = [
     "openai>=2.38.0",
     "PyYAML>=6.0.3",
     "python-multipart>=0.0.20",
+    "boto3>=1.34.0",
 ]
 
 [project.optional-dependencies]
@@ -37,7 +38,6 @@ gen-ai = [
     "pypdfium2>=5.8.0",
     "PyMuPDF>=1.27.2.3",
     "unstructured==0.16.25",
-    "sentence-transformers>=5.5.1",
     "tiktoken>=0.13.0",
 ]
 all = [
@@ -55,13 +55,13 @@ all = [
     "pypdfium2>=5.8.0",
     "PyMuPDF>=1.27.2.3",
     "unstructured==0.16.25",
-    "sentence-transformers>=5.5.1",
     "tiktoken>=0.13.0",
 ]
 
 [project.scripts]
 vectorforge-v1-trad-ml = "vectorforge_v1.exp_designer.trad_ml.autogluon.__main__:main"
 vectorforge-v1-gen-ai = "vectorforge_v1.exp_designer.gen_ai.autorag.agentic_autorag:main"
+vectorforge-v1-orchestrate = "vectorforge_v1.orchestrator.runner:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

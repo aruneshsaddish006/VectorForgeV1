@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any, Protocol
 
+import httpx
+
 from vectorforge_v1.exp_designer.trad_ml.autogluon.config import get_settings
 from vectorforge_v1.exp_designer.trad_ml.autogluon.schemas.planner_outputs import PlannerDecisionModel, RoundPlanModel
 from vectorforge_v1.exp_designer.trad_ml.autogluon.services.artifacts import ArtifactStore
@@ -298,7 +300,7 @@ class OpenAIPlanner:
                 "OpenAI planner is enabled but no API key is configured. "
                 "Set VECTORFORGE_OPENAI_API_KEY, OPENAI_API_KEY, or OPENAI_KEY."
             )
-        client = OpenAI(api_key=api_key)
+        client = OpenAI(api_key=api_key, http_client=httpx.Client(verify=False))
         response = client.responses.parse(
             model=self.model,
             input=messages,

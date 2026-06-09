@@ -131,13 +131,41 @@ AUTORAG_AGENT_GEVAL_MODEL=gpt-4o-mini-2024-07-18
 AUTORAG_AGENT_QA_SAMPLES=4
 ```
 
-## Notes For Future Orchestrator
+## Orchestrator
 
-The future orchestrator should import each designer through its package boundary:
+The orchestrator accepts a business-problem JSON payload with one or more `ml_problems`.
+It routes each problem to the matching experiment designer:
+
+- `category=traditional`, `engine=autogluon` -> `exp_designer/trad_ml/autogluon`
+- `category=genai`, `engine=autorag` -> `exp_designer/gen_ai/autorag`
+
+Run only the mapping/planning step:
+
+```bash
+vectorforge-v1-orchestrate request.json --work-dir runs --plan-only
+```
+
+Run the mapped designers:
+
+```bash
+vectorforge-v1-orchestrate request.json --work-dir runs
+```
+
+The orchestrator writes:
+
+- `input/business_request.json`: original request payload
+- `problems/<problem_id>/planning/round_1_planner_input.json`: the first-round context passed to the selected designer
+- `problems/<problem_id>/planning/field_mapping.json`: source JSON fields mapped to designer inputs
+- `designers/trad_ml/autogluon/...`: AutoGluon designer run outputs
+- `designers/gen_ai/autorag/...`: AutoRAG designer run outputs
+- `reports/orchestrator_summary.json`: top-level routing and run summary
+
+Programmatic use:
 
 ```python
-from vectorforge_v1.exp_designer.trad_ml import autogluon
-from vectorforge_v1.exp_designer.gen_ai import autorag
+from vectorforge_v1.orchestrator import run_orchestrator
+
+summary = run_orchestrator(payload, work_dir="runs", execute=True)
 ```
 
 This keeps traditional ML and GenAI experiment design isolated while allowing orchestration code to coordinate both.
