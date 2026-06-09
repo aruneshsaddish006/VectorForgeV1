@@ -189,8 +189,14 @@ async def dataset_sourcing_node(state: ConversationalState) -> dict:
     # ------------------------------------------------------------------ #
     if phase == "schema":
         s3_path = state.get("dataset_pending_s3_path", "")
+        is_uploaded = s3_path.startswith("s3://")
 
-        if inferred_columns:
+        # Auto-confirm schema for direct uploads — the user already chose the
+        # file so there is no need for interactive column mapping.
+        # Only interrupt on the discover path where column names may differ.
+        if is_uploaded or not inferred_columns:
+            overrides: dict = {}
+        else:
             schema_resume = interrupt(
                 {
                     "type": InterruptType.SCHEMA_CONFIRMATION.value,
@@ -204,13 +210,10 @@ async def dataset_sourcing_node(state: ConversationalState) -> dict:
                     "s3_path": s3_path,
                 }
             )
-            overrides: dict = (schema_resume or {}).get("column_overrides", {})
-        else:
-            schema_resume = None
-            overrides = {}
+            overrides = (schema_resume or {}).get("column_overrides", {})
 
         column_mapping = _build_column_mapping(inferred_columns, overrides)
-        source_type = DatasetSourceType.UPLOAD if s3_path.startswith("s3://") else DatasetSourceType.SKIP
+        source_type = DatasetSourceType.UPLOAD if is_uploaded else DatasetSourceType.SKIP
 
         source = {
             "problem_id": prob_id,
