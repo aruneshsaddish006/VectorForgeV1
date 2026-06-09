@@ -73,3 +73,7 @@ logs/
 *.pt
 *.pth
 *.bin
+build/
+dist/
+.claude/
+.code-review-graph/

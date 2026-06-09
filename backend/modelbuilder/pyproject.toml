@@ -1,0 +1,87 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vectorforge-v1"
+version = "0.1.0"
+description = "VectorForge V1 experiment designer workspace for traditional ML and GenAI workflows."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.136.3",
+    "uvicorn[standard]>=0.48.0",
+    "pydantic-settings>=2.14.1",
+    "pandas>=2.3.3",
+    "langgraph>=1.2.2",
+    "openai>=2.38.0",
+    "PyYAML>=6.0.3",
+    "python-multipart>=0.0.20",
+    "python-dotenv>=1.2.2",
+    "boto3>=1.34.0",
+    "redis>=5.0.0",
+    "requests>=2.32.0",
+    "redis>=5.0.0",
+    "autogluon-tabular>=1.5.0",
+    "catboost>=1.2.10",
+    "lightgbm>=4.6.0",
+    "xgboost>=3.2.0",
+    "AutoRAG==0.3.22",
+    "chromadb>=1.5.9",
+    "rank-bm25>=0.2.2",
+    "bm25s>=0.3.9",
+    "pypdf>=6.12.2",
+    "pdfplumber>=0.11.9",
+    "pypdfium2>=5.8.0",
+    "PyMuPDF>=1.27.2.3",
+    "sentence-transformers>=5.5.1",
+    "tiktoken>=0.13.0",
+    "scikit-learn",
+]
+
+[project.optional-dependencies]
+sandbox-server = [
+    "opensandbox-server>=0.1.14",
+]
+trad-ml = [
+    "autogluon-tabular>=1.5.0",
+    "catboost>=1.2.10",
+    "lightgbm>=4.6.0",
+    "xgboost>=3.2.0",
+    "scikit-learn>=1.5.0",
+]
+gen-ai = [
+    "AutoRAG==0.3.22",
+    "chromadb>=1.5.9",
+    "rank-bm25>=0.2.2",
+    "bm25s>=0.3.9",
+    "pypdf>=6.12.2",
+    "pdfplumber>=0.11.9",
+    "pypdfium2>=5.8.0",
+    "PyMuPDF>=1.27.2.3",
+    "tiktoken>=0.13.0",
+]
+all = [
+    "autogluon-tabular>=1.5.0",
+    "catboost>=1.2.10",
+    "lightgbm>=4.6.0",
+    "xgboost>=3.2.0",
+    "AutoRAG==0.3.22",
+    "chromadb>=1.5.9",
+    "rank-bm25>=0.2.2",
+    "bm25s>=0.3.9",
+    "pypdf>=6.12.2",
+    "pdfplumber>=0.11.9",
+    "pypdfium2>=5.8.0",
+    "PyMuPDF>=1.27.2.3",
+    "tiktoken>=0.13.0",
+    "scikit-learn",
+]
+
+[project.scripts]
+vectorforge-v1-trad-ml = "vectorforge_v1.exp_designer.trad_ml.autogluon.__main__:main"
+vectorforge-v1-gen-ai = "vectorforge_v1.exp_designer.gen_ai.autorag.agentic_autorag:main"
+vectorforge-v1-orchestrate = "vectorforge_v1.orchestrator.runner:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

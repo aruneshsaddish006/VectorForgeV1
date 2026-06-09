@@ -1,22 +1,30 @@
 # VectorForge V1
 
-VectorForge V1 reconciles the two current experiment designers into one repository layout so an orchestrator can later coordinate them from stable package paths.
+VectorForge V1 keeps the model-building service as a dedicated backend module. The
+AutoGluon designer, AutoRAG designer, artifact forge, and orchestrator live under
+`backend/modelbuilder` with their own `pyproject.toml`, `uv.lock`, and FastAPI
+entrypoint.
 
 ## Repository Layout
 
 ```text
 VectorforgeV1/
-  src/
-    vectorforge_v1/
-      orchestrator/              # future cross-designer orchestration layer
-      agent/                     # future agent coordination layer
-      routes/                    # future API route aggregation layer
-      utils/                     # shared utilities
-      exp_designer/
-        trad_ml/
-          autogluon/             # traditional ML experiment designer
-        gen_ai/
-          autorag/               # GenAI/RAG experiment designer
+  backend/
+    app/                         # application/backend API module
+    conversational/              # conversational service module
+    modelbuilder/
+      app.py                     # modelbuilder FastAPI entrypoint
+      pyproject.toml
+      uv.lock
+      src/
+        vectorforge_v1/
+          orchestrator/          # cross-designer orchestration layer
+          utils/                 # shared utilities
+          exp_designer/
+            trad_ml/
+              autogluon/         # traditional ML experiment designer
+            gen_ai/
+              autorag/           # GenAI/RAG experiment designer
 ```
 
 ## Experiment Designers
@@ -26,7 +34,7 @@ VectorforgeV1/
 Location:
 
 ```text
-src/vectorforge_v1/exp_designer/trad_ml/autogluon/
+backend/modelbuilder/src/vectorforge_v1/exp_designer/trad_ml/autogluon/
 ```
 
 This is the AutoGluon/FastAPI/LangGraph designer copied from `VectorForge/AutoGluon`. Its imports have been rewritten to the new package path:
@@ -52,7 +60,7 @@ python -m vectorforge_v1.exp_designer.trad_ml.autogluon
 Location:
 
 ```text
-src/vectorforge_v1/exp_designer/gen_ai/autorag/
+backend/modelbuilder/src/vectorforge_v1/exp_designer/gen_ai/autorag/
 ```
 
 This is the AutoRAG/LangGraph designer copied from `VectorForge/agentic_autorag.py`.
@@ -84,6 +92,7 @@ python -m vectorforge_v1.exp_designer.gen_ai.autorag \
 Create a virtual environment:
 
 ```bash
+cd backend/modelbuilder
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
@@ -126,9 +135,16 @@ OPENAI_API_KEY=...
 Optional AutoRAG variables:
 
 ```bash
-AUTORAG_AGENT_MODEL=gpt-4o-mini-2024-07-18
-AUTORAG_AGENT_GEVAL_MODEL=gpt-4o-mini-2024-07-18
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 AUTORAG_AGENT_QA_SAMPLES=4
+```
+
+Run the modelbuilder API:
+
+```bash
+cd backend/modelbuilder
+uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ## Orchestrator
