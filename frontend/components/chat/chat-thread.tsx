@@ -1,11 +1,13 @@
 "use client"
 
 import { useEffect, useRef, useState, type ElementType } from "react"
-import { Cpu, Database, Loader2, Rocket, ShieldCheck } from "lucide-react"
+import { Cpu, Database, Loader2, Rocket, ShieldCheck, Trash2 } from "lucide-react"
 import { UserMessage, AgentMessage, SystemCardSlot } from "./messages"
 import { Composer } from "./composer"
 import { StrategyCard } from "@/components/cards/strategy-card"
 import { DataSourceCard } from "@/components/cards/data-source-card"
+import { DecomposerCard, type DecomposerCardData } from "@/components/cards/decomposer-card"
+import { DataUploadCard } from "@/components/cards/data-upload-card"
 import { ExaBuilderCard } from "@/components/cards/exa-builder-card"
 import { SchemaConfirmCard } from "@/components/cards/schema-confirm-card"
 import { TrainingCard } from "@/components/cards/training-card"
@@ -15,9 +17,9 @@ import { BillingApprovalCard } from "@/components/cards/billing-approval-card"
 import {
   fetchDemoWorkspace,
   fetchProjectAssets,
-  generateSessionId,
   getConversationState,
   respondToInterrupt,
+  streamRespondToInterrupt,
   startConversation,
   uploadDataset,
   type Project,
@@ -44,6 +46,21 @@ function buildSessionId(
   projectId: string,
 ): string {
   return `${userId}_${workspaceId}_${projectId}`
+}
+
+/** Merge server snapshot into client session.
+ *  The server snapshot is authoritative for status/interrupt.
+ *  For messages, keep whichever list is longer — the server snapshot can be
+ *  sparse when a node interrupted before returning its state update. */
+function mergeSession(
+  prev: ConversationSession | null,
+  updated: ConversationSession,
+): ConversationSession {
+  const messages =
+    updated.messages.length >= (prev?.messages.length ?? 0)
+      ? updated.messages
+      : (prev?.messages ?? updated.messages)
+  return { ...updated, messages }
 }
 
 function getStoredUserId(): string {
@@ -116,14 +133,22 @@ export function ChatThread({
     const sid = buildSessionId(userId, wsId, projId)
     setSessionId(sid)
 
-    // Try to hydrate an existing session for this combination
+    // Try to hydrate an existing session for this combination.
+    // Only clear client state on failure if we don't already have messages —
+    // a server hot-reload loses MemorySaver state but the client still has
+    // the rendered conversation; don't wipe it.
     setConvLoading(true)
     getConversationState(sid)
       .then((s) => { setSession(s); setConvStarted(true) })
       .catch(() => {
-        // No existing session on backend — fresh start
-        setSession(null)
-        setConvStarted(false)
+        setSession((prev) => {
+          if (prev && prev.messages.length > 0) return prev
+          return null
+        })
+        setConvStarted((prev) => {
+          if (prev) return prev
+          return false
+        })
       })
       .finally(() => setConvLoading(false))
   }, [selectedWorkspace?.id, selectedProject?.id])
@@ -151,11 +176,26 @@ export function ChatThread({
     )
 
     try {
-      const updated = convStarted
-        ? await respondToInterrupt(sessionId, { answers: { "0": text } })
-        : await startConversation(sessionId, text)
-      if (!convStarted) setConvStarted(true)
-      setSession(updated)
+      if (!convStarted) {
+        const updated = await startConversation(sessionId, text)
+        setConvStarted(true)
+        setSession(updated)
+      } else {
+        await new Promise<void>((resolve, reject) => {
+          streamRespondToInterrupt(sessionId, { answers: { "0": text } }, {
+            onMessage(msg) {
+              setSession((prev) =>
+                prev ? { ...prev, messages: [...prev.messages, msg] } : prev,
+              )
+            },
+            onComplete(updated) {
+              setSession((prev) => mergeSession(prev, updated))
+              resolve()
+            },
+            onError(detail) { reject(new Error(detail)) },
+          })
+        })
+      }
     } catch (err) {
       setConvError(err instanceof Error ? err.message : "Something went wrong.")
     } finally {
@@ -168,7 +208,20 @@ export function ChatThread({
     setConvError(null)
     setConvLoading(true)
     try {
-      setSession(await respondToInterrupt(sessionId, payload))
+      await new Promise<void>((resolve, reject) => {
+        streamRespondToInterrupt(sessionId, payload, {
+          onMessage(msg) {
+            setSession((prev) =>
+              prev ? { ...prev, messages: [...prev.messages, msg] } : prev,
+            )
+          },
+          onComplete(updated) {
+            setSession((prev) => mergeSession(prev, updated))
+            resolve()
+          },
+          onError(detail) { reject(new Error(detail)) },
+        })
+      })
     } catch (err) {
       setConvError(err instanceof Error ? err.message : "Something went wrong.")
     } finally {
@@ -190,10 +243,42 @@ export function ChatThread({
     }
   }
 
-  // Paperclip in Composer → forward to file upload only when graph is awaiting upload
+  // Paperclip in Composer → upload directly when awaiting_upload, otherwise no-op
   function handleComposerFile(file: File) {
     const probId = session?.interrupt?.problemId
-    if (probId) handleFileUpload(probId, file)
+    const itype = session?.interrupt?.type
+    if (!probId) return
+    if (itype === "awaiting_upload") {
+      handleFileUpload(probId, file)
+    } else if (itype === "dataset_source_choice") {
+      handleChoiceAndUpload(file, probId)
+    }
+  }
+
+  function handleClearChat() {
+    const userId = getStoredUserId()
+    const wsId = selectedWorkspace?.id ?? DEFAULT_WORKSPACE_ID
+    const projId = selectedProject?.id ?? DEFAULT_PROJECT_ID
+    setSessionId(`${buildSessionId(userId, wsId, projId)}_${Date.now()}`)
+    setSession(null)
+    setConvStarted(false)
+    setConvError(null)
+  }
+
+  // Two-step upload: send choice=upload then immediately upload the file
+  async function handleChoiceAndUpload(file: File, probId: string) {
+    if (!sessionId || convLoading) return
+    setConvError(null)
+    setConvLoading(true)
+    try {
+      await respondToInterrupt(sessionId, { choice: "upload" })
+      await uploadDataset(sessionId, probId, file)
+      setSession(await getConversationState(sessionId))
+    } catch (err) {
+      setConvError(err instanceof Error ? err.message : "Upload failed.")
+    } finally {
+      setConvLoading(false)
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -250,6 +335,17 @@ export function ChatThread({
               Today &middot; {selectedProject.name}
             </span>
             <span className="h-px flex-1 bg-border" />
+            {convStarted && (
+              <button
+                type="button"
+                onClick={handleClearChat}
+                className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-muted-foreground transition-colors hover:text-destructive"
+                title="Clear conversation"
+              >
+                <Trash2 className="h-3 w-3" aria-hidden="true" />
+                Clear chat
+              </button>
+            )}
           </div>
 
           <div className="app-control mx-auto rounded-full px-4 py-1.5 text-[11px] font-semibold text-muted-foreground">
@@ -274,16 +370,76 @@ export function ChatThread({
                 </UserMessage>
               )
             }
+
             return (
-              <AgentMessage
-                key={`live-${i}`}
-                agent={msg.agentName ?? "Agent"}
-                time={formatTime(msg.timestamp)}
-              >
+              <AgentMessage key={`live-${i}`} agent={msg.agentName ?? "Agent"} time={formatTime(msg.timestamp)}>
                 {msg.content}
               </AgentMessage>
             )
           })}
+
+          {/* Pending interrupt — renders specialised cards or falls back to text bubble */}
+          {convStarted && !convLoading && session?.interrupt && (() => {
+            const { type, message, questions, data, problemId, problemName, engine } = session.interrupt
+
+            if (type === "sub_problem_confirmation") {
+              return (
+                <SystemCardSlot>
+                  <DecomposerCard
+                    cardData={data as DecomposerCardData}
+                    onConfirm={() => handleInterruptAction({ confirmed: true })}
+                    onAdjust={() => handleInterruptAction({ confirmed: false })}
+                    loading={convLoading}
+                  />
+                </SystemCardSlot>
+              )
+            }
+
+            if (type === "dataset_source_choice") {
+              return (
+                <SystemCardSlot>
+                  <DataUploadCard
+                    problemId={problemId ?? ""}
+                    problemName={problemName ?? "Dataset"}
+                    engine={(engine as "autogluon" | "autorag") ?? "autogluon"}
+                    onUploadFile={(file) => handleChoiceAndUpload(file, problemId ?? "")}
+                    onDiscover={() => handleInterruptAction({ choice: "discover" })}
+                    onSkip={() => handleInterruptAction({ choice: "skip" })}
+                    loading={convLoading}
+                  />
+                </SystemCardSlot>
+              )
+            }
+
+            if (type === "awaiting_upload") {
+              return (
+                <SystemCardSlot>
+                  <DataUploadCard
+                    problemId={problemId ?? ""}
+                    problemName={problemName ?? "Dataset"}
+                    engine={(engine as "autogluon" | "autorag") ?? "autogluon"}
+                    onUploadFile={(file) => handleFileUpload(problemId ?? "", file)}
+                    onDiscover={() => handleInterruptAction({ choice: "discover" })}
+                    onSkip={() => handleInterruptAction({ choice: "skip" })}
+                    loading={convLoading}
+                  />
+                </SystemCardSlot>
+              )
+            }
+
+            return (
+              <AgentMessage agent="Agent" time={formatTime(new Date().toISOString())}>
+                <span>{message}</span>
+                {questions && questions.length > 0 && (
+                  <ol className="mt-2 list-decimal pl-4 space-y-1">
+                    {questions.map((q, qi) => (
+                      <li key={qi}>{q}</li>
+                    ))}
+                  </ol>
+                )}
+              </AgentMessage>
+            )
+          })()}
 
           {/* Thinking indicator */}
           {convLoading && (

@@ -130,8 +130,8 @@ async function parseApiError(response: Response): Promise<string> {
     if (typeof payload.detail === "string") return payload.detail
     if (Array.isArray(payload.detail)) {
       return payload.detail
-        .map((item) => {
-          const field = Array.isArray(item.loc) ? item.loc.filter((part: unknown) => part !== "body").join(".") : ""
+        .map((item: Record<string, unknown>) => {
+          const field = Array.isArray(item.loc) ? (item.loc as unknown[]).filter((part) => part !== "body").join(".") : ""
           return field ? `${field}: ${item.msg}` : item.msg
         })
         .filter(Boolean)
@@ -250,6 +250,16 @@ export function fetchProjects(workspaceId: string): Promise<Project[]> {
   return getWithAuth<Project[]>(`/api/projects?workspaceId=${encodeURIComponent(workspaceId)}`)
 }
 
+export async function deleteProject(projectId: string): Promise<void> {
+  const token = window.localStorage.getItem("forge_ai_token")
+  if (!token) throw new Error("You need to log in first.")
+  const response = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!response.ok) throw new Error(await parseApiError(response))
+}
+
 export function fetchProjectAssets(workspaceId: string, projectId: string): Promise<ProjectAssets> {
   return getWithAuth<ProjectAssets>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/assets`,
@@ -355,18 +365,92 @@ export async function startConversation(sessionId: string, message: string): Pro
   return normaliseSession(json.data)
 }
 
-/** Resume the graph after an interrupt with the user's response payload. */
+type StreamHandlers = {
+  onMessage?: (msg: import("./types").ConversationMessage, node: string) => void
+  onStatus?: (status: string, node: string) => void
+  onComplete?: (session: ConversationSession) => void
+  onError?: (detail: string) => void
+}
+
+/**
+ * Stream the /respond endpoint as SSE, calling handlers for each event.
+ * Returns an abort function to cancel mid-stream.
+ */
+export function streamRespondToInterrupt(
+  sessionId: string,
+  payload: Record<string, unknown>,
+  handlers: StreamHandlers,
+): () => void {
+  const controller = new AbortController()
+
+  ;(async () => {
+    try {
+      const response = await fetch(
+        `${CONV_API_BASE_URL}/api/v1/conversations/${sessionId}/respond`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        },
+      )
+      if (!response.ok) {
+        handlers.onError?.(await parseApiError(response))
+        return
+      }
+
+      const reader = response.body!.getReader()
+      const decoder = new TextDecoder()
+      let buf = ""
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        const lines = buf.split("\n")
+        buf = lines.pop() ?? ""
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue
+          try {
+            const ev = JSON.parse(line.slice(6)) as { type: string; [k: string]: unknown }
+            if (ev.type === "message") {
+              handlers.onMessage?.(
+                normaliseMessage(ev.message as Record<string, unknown>),
+                ev.node as string,
+              )
+            } else if (ev.type === "status") {
+              handlers.onStatus?.(ev.status as string, ev.node as string)
+            } else if (ev.type === "complete") {
+              handlers.onComplete?.(normaliseSession(ev.data as Record<string, unknown>))
+            } else if (ev.type === "error") {
+              handlers.onError?.(ev.detail as string)
+            }
+          } catch {
+            // malformed SSE line — skip
+          }
+        }
+      }
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") {
+        handlers.onError?.((err as Error).message)
+      }
+    }
+  })()
+
+  return () => controller.abort()
+}
+
+/** Resume the graph after an interrupt; resolves once the SSE stream completes. */
 export async function respondToInterrupt(
   sessionId: string,
   payload: Record<string, unknown>,
 ): Promise<ConversationSession> {
-  const res = await convFetch(`/api/v1/conversations/${sessionId}/respond`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+  return new Promise((resolve, reject) => {
+    streamRespondToInterrupt(sessionId, payload, {
+      onComplete: resolve,
+      onError: (detail) => reject(new Error(detail)),
+    })
   })
-  const json = await res.json()
-  return normaliseSession(json.data)
 }
 
 /** Upload a dataset file for a sub-problem and resume the paused graph. */
