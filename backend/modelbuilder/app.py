@@ -26,6 +26,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import threading
 import uuid
 from contextlib import asynccontextmanager
@@ -33,7 +34,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from vectorforge_v1.exp_designer.trad_ml.autogluon.api.config import router as config_router
 from vectorforge_v1.exp_designer.trad_ml.autogluon.api.runs import router as runs_router
@@ -98,6 +99,51 @@ def _new_orch_id() -> str:
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _load_env_files() -> None:
+    for path in _candidate_env_paths():
+        if path.exists():
+            _load_env_file(path)
+
+
+def _candidate_env_paths() -> list[Path]:
+    app_root = Path(__file__).resolve().parent
+    package_root = app_root / "src" / "vectorforge_v1"
+    return [
+        Path.cwd() / ".env",
+        app_root / ".env",
+        package_root / ".env",
+        app_root.parent / ".env",
+        app_root.parent.parent / ".env",
+    ]
+
+
+def _load_env_file(path: Path) -> None:
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+def _redis_key(name: str) -> str:
+    prefix = os.environ.get("VECTORFORGE_REDIS_CHANNEL_PREFIX", "vectorforge").strip(":")
+    return f"{prefix}:{name.lstrip(':')}" if prefix else name.lstrip(":")
+
+
+def _decode_stream_payload(fields: dict[str, Any]) -> dict[str, Any]:
+    payload = fields.get("payload")
+    if not payload:
+        return fields
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError:
+        return {"raw": payload}
 
 
 def _orch_run_dir(orch_id: str) -> Path:
@@ -346,6 +392,7 @@ async def trigger_orchestrator_from_session(
             status_code=404,
             detail=f"No conversation output found at vforge:conv:{session_id}",
         )
+    request["session_id"] = session_id
 
     orch_id = _new_orch_id()
     with _ORCH_LOCK:
@@ -394,6 +441,62 @@ def get_orchestrator_run(orch_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"Orchestrator run '{orch_id}' not found")
 
     return dict(run)
+
+
+# ── GET /sessions/{session_id}/experiment-results ────────────────────────────
+
+@app.get("/sessions/{session_id}/experiment-results", tags=["experiment-results"])
+def get_session_experiment_results(
+    session_id: str,
+    after: str = Query("0-0"),
+    count: int = Query(100, ge=1, le=500),
+    block_ms: int = Query(0, ge=0, le=30000),
+) -> dict[str, Any]:
+    """
+    Poll Redis Stream-backed experiment updates for a frontend session.
+
+    The frontend should start with after=0-0, then send the returned cursor
+    on subsequent polls. The cursor advances to the last stream entry inspected,
+    even if some entries are for other sessions.
+    """
+    _load_env_files()
+    redis_url = os.environ.get("VECTORFORGE_REDIS_URL")
+    stream = _redis_key("experiments:results")
+    if not redis_url:
+        raise HTTPException(status_code=503, detail="VECTORFORGE_REDIS_URL is not configured.")
+
+    try:
+        import redis
+
+        client = redis.Redis.from_url(redis_url, decode_responses=True)
+        xread_kwargs: dict[str, Any] = {"count": count}
+        if block_ms > 0:
+            xread_kwargs["block"] = block_ms
+        rows = client.xread({stream: after}, **xread_kwargs)
+    except Exception as exc:  # noqa: BLE001 - surface Redis/network errors to the client.
+        raise HTTPException(status_code=503, detail=f"Redis stream read failed: {exc!s}") from exc
+
+    cursor = after
+    events: list[dict[str, Any]] = []
+    for _, messages in rows:
+        for message_id, fields in messages:
+            cursor = message_id
+            if fields.get("session_id") != session_id:
+                continue
+            events.append(
+                {
+                    "id": message_id,
+                    "payload": _decode_stream_payload(fields),
+                }
+            )
+
+    return {
+        "session_id": session_id,
+        "cursor": cursor,
+        "stream": stream,
+        "events": events,
+        "error": None,
+    }
 
 
 # ── GET /runs/{run_id}/artifact/download ─────────────────────────────────────
