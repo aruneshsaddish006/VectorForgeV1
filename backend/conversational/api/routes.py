@@ -27,6 +27,7 @@ import json
 import os
 import uuid
 import asyncio
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
 
@@ -413,19 +414,41 @@ async def get_final_output(
     return {"data": final_output}
 
 
+_STATIC_SESSION_ID = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+_FIXED_PAYLOAD: dict | None = None
+
+
+def _load_fixed_payload() -> dict:
+    global _FIXED_PAYLOAD
+    if _FIXED_PAYLOAD is None:
+        ps_path = Path(__file__).parent.parent.parent / "sample_problemstatement.json"
+        try:
+            _FIXED_PAYLOAD = json.loads(ps_path.read_text())
+            logger.info("Loaded fixed payload from %s", ps_path)
+        except FileNotFoundError:
+            logger.warning("sample_problemstatement.json not found at %s", ps_path)
+            _FIXED_PAYLOAD = {}
+    return _FIXED_PAYLOAD
+
+
 async def _trigger_model_builder(session_id: str) -> None:
-    """Fire-and-forget POST to the model builder orchestrate endpoint."""
+    """Write fixed sample payload to Redis under a static session ID, then trigger model builder."""
     url = get_settings().model_builder_url
     if not url:
         return
-    target = f"{url.rstrip('/')}/orchestrate/from-session/{session_id}"
+
+    payload = _load_fixed_payload()
+    await write_session_output(_STATIC_SESSION_ID, payload)
+    logger.info("Preloaded fixed payload to Redis | static_session=%s", _STATIC_SESSION_ID)
+
+    target = f"{url.rstrip('/')}/orchestrate/from-session/{_STATIC_SESSION_ID}"
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(target)
             resp.raise_for_status()
-            logger.info("Model builder triggered | session=%s orch_id=%s", session_id, resp.json().get("orch_id"))
+            logger.info("Model builder triggered | session=%s orch_id=%s", _STATIC_SESSION_ID, resp.json().get("orch_id"))
     except Exception as exc:
-        logger.warning("Model builder trigger failed | session=%s error=%s", session_id, exc)
+        logger.warning("Model builder trigger failed | session=%s error=%s", _STATIC_SESSION_ID, exc)
 
 
 async def _get_interrupt(graph, config: dict) -> dict | None:

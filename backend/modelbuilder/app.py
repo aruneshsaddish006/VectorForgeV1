@@ -29,10 +29,13 @@ from __future__ import annotations
 
 import json
 import os
+import random
+import re
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 import uuid
 import zipfile
 from contextlib import asynccontextmanager
@@ -61,8 +64,17 @@ _ORCH_LOCK = threading.Lock()
 _AUTORAG_DEPLOYS: dict[str, dict[str, Any]] = {}
 _AUTORAG_DEPLOY_LOCK = threading.Lock()
 
+# In-memory replay sessions for the experiment-results replay endpoint.
+# Each entry trickles the dashboard JSON rows out one-by-one at random
+# intervals, mimicking a live Redis-stream-backed run for the frontend.
+_REPLAY_SESSIONS: dict[str, dict[str, Any]] = {}
+_REPLAY_LOCK = threading.Lock()
+
 # Resolved path to the runs base directory (matches ArtifactStore default)
 _RUNS_DIR = Path("runs")
+
+# Path to the canned dashboard results replayed by the replay endpoint.
+_REPLAY_SOURCE_FILE = Path(__file__).resolve().parent / "dashboard_experiment_results_initial.json"
 
 
 class SessionAutoRagDeployRequest(BaseModel):
@@ -76,6 +88,10 @@ class AutoRagInvokeRequest(BaseModel):
     records: Any | None = None
     data: Any | None = None
     result_column: str = "generated_texts"
+    # Which designer artifact to invoke when a session produced more than one
+    # (e.g. an autogluon tabular problem AND an autorag problem). Accepts
+    # "autorag" or "autogluon_tabular". Defaults to "autorag" for these routes.
+    engine: str | None = None
 
 
 # ── Lifespan ─────────────────────────────────────────────────────────────────
@@ -260,6 +276,10 @@ def _resolve_autorag_trial_dir(resolved: dict[str, Any]) -> Path:
     designer_run_id = str(resolved["designer_run_id"])
     designer_run_dir = resolved.get("designer_run_dir")
     run_dir = Path(str(designer_run_dir)).expanduser() if designer_run_dir else _RUNS_DIR / designer_run_id
+    # Stored summary paths may be machine-specific absolute paths from another
+    # host (e.g. /Users/<other>/.../runs/...). Trim to the local 'runs' anchor.
+    if not run_dir.exists():
+        run_dir = _rebase_path(run_dir)
     if not run_dir.exists():
         run_dir = _RUNS_DIR / designer_run_id
     if not run_dir.exists():
@@ -280,6 +300,9 @@ def _resolve_autorag_trial_dir(resolved: dict[str, Any]) -> Path:
         raise HTTPException(status_code=404, detail="AutoRAG final recommendation has no winning_model_path.")
 
     project_dir = Path(str(project_path)).expanduser()
+    if not project_dir.exists():
+        # Foreign absolute path from another host — trim to the local 'runs' anchor.
+        project_dir = _rebase_path(project_dir)
     if not project_dir.exists():
         project_dir = run_dir / str(project_path)
     if not project_dir.exists():
@@ -326,7 +349,7 @@ def _find_artifact_zip(run_id: str) -> Path | None:
             continue
         for pr in summary.get("problem_results", []):
             if pr.get("designer_run_id") == run_id:
-                d_dir = Path(pr.get("designer_run_dir", ""))
+                d_dir = _rebase_path(Path(pr.get("designer_run_dir", "")))
                 if d_dir.exists():
                     zip_path = find_artifact_zip_in_run_dir(d_dir)
                     if zip_path:
@@ -372,6 +395,61 @@ def _ensure_artifact_zip(run_id: str) -> Path:
     )
 
 
+def _rebase_path(path: Path) -> Path:
+    """Strip any machine-specific prefix and rebase from the 'runs' folder anchor."""
+    if path.exists():
+        return path
+    parts = path.parts
+    for i, part in enumerate(parts):
+        if part == "runs":
+            rebased = _RUNS_DIR / Path(*parts[i + 1:])
+            if rebased.exists():
+                return rebased
+    return path
+
+
+def _rebase_absolute_runs_path(raw: str) -> str | None:
+    """Rebase a foreign absolute path containing a 'runs/...' segment onto the
+    local runs tree, returning an absolute local path, or None if not rebasable."""
+    candidate = Path(raw)
+    if candidate.exists():
+        return None
+    parts = candidate.parts
+    for i, part in enumerate(parts):
+        if part == "runs":
+            local = (_RUNS_DIR / Path(*parts[i + 1:])).resolve()
+            if local.exists():
+                return str(local)
+    return None
+
+
+def _rewrite_foreign_paths_in_yaml(trial_dir: Path) -> None:
+    """AutoRAG trial configs (config.yaml, resources/vectordb.yaml) can embed
+    absolute paths from the host that produced the run (e.g. a chroma db path).
+    On another machine those paths are unreadable, surfacing as
+    'Permission denied (os error 13)'. Rewrite any such 'runs/...'-anchored
+    absolute paths to the local equivalent before the Runner opens them."""
+    project_dir = trial_dir.parent  # optimization_project
+    yaml_files = [trial_dir / "config.yaml", project_dir / "resources" / "vectordb.yaml"]
+    for yaml_path in yaml_files:
+        if not yaml_path.exists():
+            continue
+        try:
+            text = yaml_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        new_text = text
+        for token in re.findall(r"/[^\s'\"]*/runs/[^\s'\"]+", text):
+            local = _rebase_absolute_runs_path(token)
+            if local and local != token:
+                new_text = new_text.replace(token, local)
+        if new_text != text:
+            try:
+                yaml_path.write_text(new_text, encoding="utf-8")
+            except OSError:
+                pass
+
+
 def _artifact_download_targets(run_id: str) -> list[dict[str, Any]]:
     targets: list[dict[str, Any]] = []
     seen: set[Path] = set()
@@ -412,7 +490,7 @@ def _artifact_download_targets(run_id: str) -> list[dict[str, Any]]:
                 continue
             add_target(
                 str(designer_run_id),
-                Path(designer_run_dir),
+                _rebase_path(Path(designer_run_dir)),
                 _engine_type_from_problem_result(problem_result),
             )
 
@@ -659,6 +737,10 @@ def _deploy_autorag_runner(
 
     designer_run_id = str(resolved["designer_run_id"])
     trial_dir = _resolve_autorag_trial_dir(resolved)
+    # Rewrite any foreign absolute paths (e.g. a chroma db path baked in by the
+    # host that produced the run) to the local runs tree before the Runner opens
+    # them, otherwise loading fails with 'Permission denied (os error 13)'.
+    _rewrite_foreign_paths_in_yaml(trial_dir)
 
     with _AUTORAG_DEPLOY_LOCK:
         existing = _AUTORAG_DEPLOYS.get(deployment_id)
@@ -774,10 +856,20 @@ def _ensure_autorag_runner_for_identifier(identifier: str) -> dict[str, Any]:
     )
 
 
-def _resolve_artifact_invoke_target(identifier: str) -> dict[str, Any]:
+def _resolve_artifact_invoke_target(
+    identifier: str, prefer_engine: str | None = None
+) -> dict[str, Any]:
     targets = _artifact_download_targets(identifier)
     if targets:
-        return targets[0]
+        # A session can produce multiple designer runs (autogluon AND autorag).
+        # Honour the caller's requested engine so /autorag/invoke doesn't route
+        # to the autogluon artifact just because it comes first in the list.
+        if prefer_engine:
+            for target in targets:
+                if target.get("engine_type") == prefer_engine:
+                    return target
+        else:
+            return targets[0]
 
     try:
         resolved = _resolve_autorag_run_for_session(identifier)
@@ -790,7 +882,25 @@ def _resolve_artifact_invoke_target(identifier: str) -> dict[str, Any]:
             "engine_type": "autorag",
         }
 
+    # Requested engine wasn't found and no separate autorag run resolved; fall
+    # back to the first available target so the caller still gets a response.
+    if targets:
+        return targets[0]
+
     raise HTTPException(status_code=404, detail=f"No completed designer run found for '{identifier}'.")
+
+
+def _normalize_engine(engine: str | None) -> str | None:
+    """Map the caller-facing engine name ("autorag"/"autogluon") to the internal
+    target engine_type used by the designer runs."""
+    if not engine:
+        return None
+    value = engine.strip().lower()
+    if value in {"autogluon", "autogluon_tabular", "tabular"}:
+        return "autogluon_tabular"
+    if value in {"autorag", "rag"}:
+        return "autorag"
+    return value
 
 
 def _autogluon_input_payload(body: AutoRagInvokeRequest) -> Any | None:
@@ -984,7 +1094,10 @@ def _exception_chain_message(exc: BaseException) -> str:
 
 
 def _autorag_invoke(deployment_id: str, body: AutoRagInvokeRequest) -> dict[str, Any]:
-    target = _resolve_artifact_invoke_target(deployment_id)
+    # Default these routes to the autorag artifact so a session that also
+    # produced an autogluon run doesn't silently invoke the tabular model.
+    prefer_engine = _normalize_engine(body.engine) or "autorag"
+    target = _resolve_artifact_invoke_target(deployment_id, prefer_engine=prefer_engine)
     engine_type = target.get("engine_type")
     if engine_type == "autogluon_tabular":
         return _invoke_autogluon_artifact(deployment_id, target, body)
@@ -1213,6 +1326,168 @@ def get_orchestrator_run(orch_id: str) -> dict[str, Any]:
     return dict(run)
 
 
+# ── Experiment-results replay (canned dashboard JSON) ────────────────────────
+#
+# Mirrors the live `/sessions/{session_id}/experiment-results` polling contract,
+# but the events come from the canned `dashboard_experiment_results_initial.json`
+# instead of Redis. Each row is released to the poller only after a random
+# 0.5-3s delay, so the frontend sees the same experiments trickle in one-by-one
+# as if a real run were streaming them. No Redis required.
+
+
+def _load_replay_source() -> dict[str, Any]:
+    try:
+        with _REPLAY_SOURCE_FILE.open(encoding="utf-8") as handle:
+            return json.load(handle)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Replay source file not found: {_REPLAY_SOURCE_FILE}",
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Replay source file is not valid JSON: {exc!s}",
+        ) from exc
+
+
+def _replay_row_to_payload(
+    row: dict[str, Any],
+    *,
+    session_id: str,
+    run_id: str,
+) -> dict[str, Any]:
+    """Reshape a dashboard `table_groups[].rows[]` entry into the exact payload
+    shape produced by `publish_experiment_result` for a live run."""
+    metrics: dict[str, Any] = {
+        "primary_metric_name": row.get("primary_metric_name"),
+        "primary_metric_value": row.get("primary_metric_value"),
+        "secondary_metrics": row.get("secondary_metrics", {}),
+    }
+    config = {
+        "experiment_id": row.get("experiment_id"),
+        "intent": row.get("intent"),
+        "hypothesis": row.get("hypothesis"),
+    }
+    return {
+        "session_id": session_id,
+        "designer": row.get("designer"),
+        "run_id": run_id,
+        "round": row.get("round"),
+        "experiment_id": row.get("experiment_id"),
+        "config_path": "",
+        "metrics_path": "",
+        "config": config,
+        "metrics": metrics,
+    }
+
+
+def _build_replay_schedule(session_id: str) -> dict[str, Any]:
+    """Build (or fetch) the per-session replay schedule: an ordered list of
+    events each tagged with the wall-clock time at which it becomes visible."""
+    source = _load_replay_source()
+    business_request = source.get("business_request") or {}
+    source_meta = source.get("source") or {}
+    run_id = (
+        business_request.get("_vectorforge_run_id")
+        or source_meta.get("run_id")
+        or "replay_run"
+    )
+
+    now = time.monotonic()
+    elapsed = now
+    items: list[dict[str, Any]] = []
+    seq = 0
+    for group in source.get("table_groups", []):
+        for row in group.get("rows", []):
+            elapsed += random.uniform(0.5, 3.0)
+            seq += 1
+            items.append(
+                {
+                    "id": str(seq),
+                    "visible_at": elapsed,
+                    "payload": _replay_row_to_payload(
+                        row, session_id=session_id, run_id=run_id
+                    ),
+                }
+            )
+
+    # Final end-of-message marker, matching publish_end_of_message.
+    elapsed += random.uniform(0.5, 3.0)
+    seq += 1
+    items.append(
+        {
+            "id": str(seq),
+            "visible_at": elapsed,
+            "payload": {
+                "session_id": session_id,
+                "run_id": run_id,
+                "event_type": "end",
+                "body": "END OF MESSAGE",
+            },
+        }
+    )
+
+    return {"started_at": now, "items": items}
+
+
+# ── GET /sessions/{session_id}/experiment-results/replay ─────────────────────
+
+@app.get(
+    "/sessions/{session_id}/experiment-results/replay",
+    tags=["experiment-results"],
+)
+def replay_session_experiment_results(
+    session_id: str,
+    after: str = Query("0"),
+) -> dict[str, Any]:
+    """
+    Replay the canned dashboard experiment results for a session, trickling
+    rows out one-by-one at random 0.5-3s intervals.
+
+    Drop-in for `/sessions/{session_id}/experiment-results`: same response
+    shape (`session_id`, `cursor`, `stream`, `events`, `error`). The frontend
+    starts with after=0 and re-polls with the returned cursor. Each event's
+    payload matches the live `publish_experiment_result` shape; the last event
+    is the `event_type: "end"` end-of-message marker.
+
+    The replay schedule is created on the first poll for a session and pinned
+    in memory, so re-polling resumes from the same timeline rather than
+    restarting it.
+    """
+    with _REPLAY_LOCK:
+        schedule = _REPLAY_SESSIONS.get(session_id)
+        if schedule is None:
+            schedule = _build_replay_schedule(session_id)
+            _REPLAY_SESSIONS[session_id] = schedule
+
+    try:
+        after_seq = int(after)
+    except (TypeError, ValueError):
+        after_seq = 0
+
+    now = time.monotonic()
+    cursor = after
+    events: list[dict[str, Any]] = []
+    for item in schedule["items"]:
+        item_seq = int(item["id"])
+        if item_seq <= after_seq:
+            continue
+        if item["visible_at"] > now:
+            # Not due yet; everything after this is scheduled later too.
+            break
+        cursor = item["id"]
+        events.append({"id": item["id"], "payload": item["payload"]})
+
+    return {
+        "session_id": session_id,
+        "cursor": cursor,
+        "stream": "replay:experiments:results",
+        "events": events,
+        "error": None,
+    }
+
+
 # ── GET /sessions/{session_id}/experiment-results ────────────────────────────
 
 @app.get("/sessions/{session_id}/experiment-results", tags=["experiment-results"])
@@ -1371,6 +1646,220 @@ def download_artifact_by_run_id(run_id: str) -> FileResponse:
         media_type="application/zip",
         filename=zip_path.name,
         headers={"Content-Disposition": f'attachment; filename="{zip_path.name}"'},
+    )
+
+
+# ── POST /orchestrate/{orch_id}/artifact/trigger ──────────────────────────────
+
+@app.post("/orchestrate/{orch_id}/artifact/trigger", tags=["artifact"])
+def trigger_orch_artifacts(
+    orch_id: str,
+    background_tasks: BackgroundTasks,
+) -> dict[str, Any]:
+    """
+    Trigger artifact generation for every problem in a completed orchestrator run.
+
+    For each problem_result in the orchestrator summary (autogluon or autorag),
+    kicks off generate_artifact() in a background thread.
+
+    Returns immediately with per-problem job details.
+    Poll GET /orchestrate/{orch_id}/artifact/status to check progress.
+    Download combined zip via GET /orchestrate/{orch_id}/artifact/download once all complete.
+    """
+    _load_env_files()
+    summary = _summary_from_orch_id(orch_id)
+    if not summary:
+        raise HTTPException(status_code=404, detail=f"Orchestrator run '{orch_id}' not found.")
+
+    problem_results = summary.get("problem_results", [])
+    if not problem_results:
+        raise HTTPException(status_code=404, detail=f"No problem_results found for '{orch_id}'.")
+
+    jobs = []
+    for pr in problem_results:
+        designer_run_id = str(pr.get("designer_run_id", ""))
+        designer_run_dir_raw = pr.get("designer_run_dir", "")
+        problem_id = pr.get("problem_id", designer_run_id)
+        engine_type = _engine_type_from_problem_result(pr)
+
+        if not designer_run_dir_raw:
+            jobs.append({"problem_id": problem_id, "status": "skipped", "reason": "missing designer_run_dir"})
+            continue
+
+        run_dir = _rebase_path(Path(str(designer_run_dir_raw)))
+        if not (run_dir / "reports" / "final_recommendation.json").exists():
+            jobs.append({"problem_id": problem_id, "status": "skipped", "reason": "final_recommendation.json not found"})
+            continue
+
+        background_tasks.add_task(
+            _generate_artifact_for_problem,
+            orch_id=orch_id,
+            problem_id=problem_id,
+            run_id=designer_run_id,
+            run_dir=run_dir,
+            engine_type=engine_type or "autogluon_tabular",
+        )
+        jobs.append({
+            "problem_id": problem_id,
+            "run_id": designer_run_id,
+            "engine_type": engine_type,
+            "status": "triggered",
+            "run_dir": str(run_dir),
+        })
+
+    return {
+        "orch_id": orch_id,
+        "jobs": jobs,
+        "status_url": f"/orchestrate/{orch_id}/artifact/status",
+        "download_url": f"/orchestrate/{orch_id}/artifact/download",
+    }
+
+
+def _generate_artifact_for_problem(
+    *,
+    orch_id: str,
+    problem_id: str,
+    run_id: str,
+    run_dir: Path,
+    engine_type: str,
+) -> None:
+    """Background task: generate artifact zip for one problem."""
+    from vectorforge_v1.artifact_forge import generate_artifact
+    from vectorforge_v1.artifact_forge.artifact_resolver import ensure_artifact_zip_for_run
+
+    try:
+        ensure_artifact_zip_for_run(run_id=run_id, run_dir=run_dir, engine_type=engine_type)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).error(
+            "Artifact generation failed | orch=%s problem=%s run=%s error=%s",
+            orch_id, problem_id, run_id, exc,
+        )
+
+
+# ── GET /orchestrate/{orch_id}/artifact/status ────────────────────────────────
+
+@app.get("/orchestrate/{orch_id}/artifact/status", tags=["artifact"])
+def get_orch_artifact_status(orch_id: str) -> dict[str, Any]:
+    """
+    Check artifact generation status for all problems in an orchestrator run.
+    """
+    _load_env_files()
+    summary = _summary_from_orch_id(orch_id)
+    if not summary:
+        raise HTTPException(status_code=404, detail=f"Orchestrator run '{orch_id}' not found.")
+
+    statuses = []
+    all_done = True
+    for pr in summary.get("problem_results", []):
+        problem_id = pr.get("problem_id", pr.get("designer_run_id", ""))
+        designer_run_dir_raw = pr.get("designer_run_dir", "")
+        run_dir = _rebase_path(Path(str(designer_run_dir_raw))) if designer_run_dir_raw else None
+
+        zip_path = find_artifact_zip_in_run_dir(run_dir) if run_dir and run_dir.exists() else None
+        status_data = {}
+        if run_dir and (run_dir / "status.json").exists():
+            try:
+                status_data = json.loads((run_dir / "status.json").read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+        artifact_status = status_data.get("artifact_status", "pending" if not zip_path else "completed")
+        if artifact_status not in ("completed", "completed_with_fallbacks"):
+            all_done = False
+
+        statuses.append({
+            "problem_id": problem_id,
+            "engine_type": _engine_type_from_problem_result(pr),
+            "artifact_status": artifact_status,
+            "zip_path": str(zip_path) if zip_path else None,
+            "smoke_status": status_data.get("artifact_smoke_status"),
+        })
+
+    return {
+        "orch_id": orch_id,
+        "all_complete": all_done,
+        "problems": statuses,
+        "download_url": f"/orchestrate/{orch_id}/artifact/download" if all_done else None,
+    }
+
+
+# ── GET /orchestrate/{orch_id}/artifact/download ─────────────────────────────
+
+@app.get("/orchestrate/{orch_id}/artifact/download", tags=["artifact"])
+def download_orch_combined_artifact(orch_id: str) -> FileResponse:
+    """
+    Download a combined zip containing one sub-zip per problem.
+
+    Layout inside the combined zip:
+      vectorforge_artifacts_{orch_id}.zip/
+        prob_1_autogluon/
+          vectorforge_artifact_{run_id}.zip
+        prob_2_autorag/
+          vectorforge_artifact_{run_id}.zip
+
+    Generates any missing per-problem artifact zips on demand before bundling.
+    """
+    _load_env_files()
+    summary = _summary_from_orch_id(orch_id)
+    if not summary:
+        raise HTTPException(status_code=404, detail=f"Orchestrator run '{orch_id}' not found.")
+
+    problem_results = summary.get("problem_results", [])
+    if not problem_results:
+        raise HTTPException(status_code=404, detail=f"No problem_results found for '{orch_id}'.")
+
+    per_problem_zips: list[tuple[str, Path]] = []
+    errors: list[str] = []
+
+    for pr in problem_results:
+        problem_id = str(pr.get("problem_id", pr.get("designer_run_id", "unknown")))
+        designer_run_id = str(pr.get("designer_run_id", ""))
+        designer_run_dir_raw = pr.get("designer_run_dir", "")
+        engine_type = _engine_type_from_problem_result(pr) or "autogluon_tabular"
+        folder_name = f"{problem_id}_{engine_type}"
+
+        if not designer_run_dir_raw:
+            errors.append(f"{problem_id}: missing designer_run_dir")
+            continue
+
+        run_dir = _rebase_path(Path(str(designer_run_dir_raw)))
+
+        # Find existing zip or generate on demand
+        zip_path = find_artifact_zip_in_run_dir(run_dir) if run_dir.exists() else None
+        if not zip_path:
+            try:
+                zip_path = ensure_artifact_zip_for_run(
+                    run_id=designer_run_id,
+                    run_dir=run_dir,
+                    engine_type=engine_type,
+                )
+            except Exception as exc:
+                errors.append(f"{problem_id}: {exc}")
+                continue
+
+        per_problem_zips.append((folder_name, zip_path))
+
+    if not per_problem_zips:
+        raise HTTPException(
+            status_code=500,
+            detail="No artifacts could be generated: " + "; ".join(errors),
+        )
+
+    # Build combined zip in the orch run directory
+    orch_dir = _orch_run_dir(orch_id)
+    orch_dir.mkdir(parents=True, exist_ok=True)
+    combined_zip_path = orch_dir / f"vectorforge_artifacts_{orch_id}.zip"
+
+    with zipfile.ZipFile(combined_zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for folder_name, zip_path in per_problem_zips:
+            zf.write(zip_path, arcname=f"{folder_name}/{zip_path.name}")
+
+    return FileResponse(
+        path=combined_zip_path,
+        media_type="application/zip",
+        filename=combined_zip_path.name,
+        headers={"Content-Disposition": f'attachment; filename="{combined_zip_path.name}"'},
     )
 
 

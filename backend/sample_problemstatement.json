@@ -1,0 +1,67 @@
+{
+  "business_problem": "Build an ecommerce churn prediction model for proactive retention outreach and a Quick Commerce Playbook RAG pipeline that answers questions with low hallucination risk and grounded citations.",
+  "domain": "ecommerce",
+  "constraint_summary": "An ecommerce customer churn modeling CSV is available in S3 with churn as the target column. A Quick Commerce Playbook PDF is also available in S3 for RAG evaluation. The run should exercise both the traditional AutoGluon path and the GenAI AutoRAG path.",
+  "ml_problems": [
+    {
+      "id": "prob_1",
+      "name": "Ecommerce Customer Churn Prediction",
+      "description": "Predict whether an ecommerce customer is likely to churn using the uploaded customer activity and engagement dataset.",
+      "category": "traditional",
+      "engine": "autogluon",
+      "autogluon_task_type": "binary_classification",
+      "hypothesis_evidence": [
+        "The dataset is prepared for customer churn prediction with churn as the target column.",
+        "Ecommerce customer activity, purchase behavior, channel engagement, support interactions, and usage patterns can provide predictive signals for churn.",
+        "The target column is churn, making this a binary classification problem."
+      ],
+      "business_kpis": [
+        "Identify high-risk ecommerce customers for retention outreach",
+        "Improve retention campaign targeting precision",
+        "Reduce customer churn through proactive offers and engagement",
+        "Increase repeat purchase rate among at-risk customers"
+      ],
+      "dataset": {
+        "description": "Ecommerce customer churn prediction CSV dataset.",
+        "target_column": {
+          "inferred_name": "churn",
+          "type": "binary",
+          "reason": "The user specified churn as the prediction target."
+        },
+        "source": {
+          "s3_path": "https://vector-forge-s3.s3.us-west-2.amazonaws.com/datasets/enriched_telecom_churn-2.csv"
+        }
+      }
+    },
+    {
+      "id": "prob_2",
+      "name": "Quick Commerce Playbook RAG",
+      "description": "Build an AutoRAG pipeline that answers questions from the Quick Commerce Playbook while minimizing hallucinations and grounding answers in the source PDF.",
+      "category": "genai",
+      "engine": "autorag",
+      "autogluon_task_type": null,
+      "hypothesis_evidence": [
+        "The Quick Commerce Playbook contains market guidance, commerce strategy, benchmarks, and operational recommendations that ecommerce and quick commerce teams need to query accurately.",
+        "A grounded RAG pipeline can help teams retrieve specific playbook guidance without manually scanning the PDF.",
+        "Low hallucination risk is important because answers should stay faithful to the published playbook rather than inventing strategy or benchmarks."
+      ],
+      "business_kpis": [
+        "Reduce time required to find relevant quick commerce strategy guidance",
+        "Improve answer faithfulness to the source playbook",
+        "Increase retrieval precision for playbook-specific recommendations and benchmarks",
+        "Support faster campaign, commerce, and retail media planning decisions"
+      ],
+      "dataset": {
+        "description": "Quick Commerce Playbook PDF covering India quick commerce strategy, market context, and commerce recommendations.",
+        "source": {
+          "s3_path": "https://vector-forge-s3.s3.us-west-2.amazonaws.com/datasets/quick-commerce-playbook-india-2025-by-mma-global-india-publicis-commerce_final.pdf",
+          "row_count": 12
+        }
+      }
+    }
+  ],
+  "session_cost_usd": 0.0,
+  "ready_for_experiments": true,
+  "max_experiment_per_round": 3,
+  "num_round": 3
+}

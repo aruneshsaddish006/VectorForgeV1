@@ -1,0 +1,512 @@
+{
+  "schema_version": "vectorforge.dashboard_experiment_results.v1",
+  "generated_at": "2026-06-10T12:12:07.387Z",
+  "source": {
+    "orch_id": "orch_20260610_113641_9977ceca",
+    "run_id": "run_20260610_113641_b5490f02",
+    "session_id": "orch_20260610_113641_9977ceca",
+    "status": "completed",
+    "completed_at": "2026-06-10T11:47:18.319568+00:00",
+    "root_dir": "/Users/arusaddi1/Documents/nxt-hack/VectorForgeV1/backend/modelbuilder/runs/orch_20260610_113641_9977ceca",
+    "run_dir": "/Users/arusaddi1/Documents/nxt-hack/VectorForgeV1/backend/modelbuilder/runs/orch_20260610_113641_9977ceca/run_20260610_113641_b5490f02"
+  },
+  "business_request": {
+    "_vectorforge_run_id": "run_20260610_113641_b5490f02",
+    "business_problem": "Build an ecommerce churn prediction model for proactive retention outreach and a Quick Commerce Playbook RAG pipeline that answers questions with low hallucination risk and grounded citations.",
+    "constraint_summary": "An ecommerce customer churn modeling CSV is available in S3 with churn as the target column. A Quick Commerce Playbook PDF is also available in S3 for RAG evaluation. The run should exercise both the traditional AutoGluon path and the GenAI AutoRAG path.",
+    "domain": "ecommerce",
+    "max_experiment_per_round": 3,
+    "ml_problems": [
+      {
+        "autogluon_task_type": "binary_classification",
+        "business_kpis": [
+          "Identify high-risk ecommerce customers for retention outreach",
+          "Improve retention campaign targeting precision",
+          "Reduce customer churn through proactive offers and engagement",
+          "Increase repeat purchase rate among at-risk customers"
+        ],
+        "category": "traditional",
+        "dataset": {
+          "description": "Ecommerce customer churn prediction CSV dataset.",
+          "source": {
+            "s3_path": "https://vector-forge-s3.s3.us-west-2.amazonaws.com/datasets/enriched_telecom_churn-2.csv"
+          },
+          "target_column": {
+            "inferred_name": "churn",
+            "reason": "The user specified churn as the prediction target.",
+            "type": "binary"
+          }
+        },
+        "description": "Predict whether an ecommerce customer is likely to churn using the uploaded customer activity and engagement dataset.",
+        "engine": "autogluon",
+        "hypothesis_evidence": [
+          "The dataset is prepared for customer churn prediction with churn as the target column.",
+          "Ecommerce customer activity, purchase behavior, channel engagement, support interactions, and usage patterns can provide predictive signals for churn.",
+          "The target column is churn, making this a binary classification problem."
+        ],
+        "id": "prob_1",
+        "name": "Ecommerce Customer Churn Prediction"
+      },
+      {
+        "autogluon_task_type": null,
+        "business_kpis": [
+          "Reduce time required to find relevant quick commerce strategy guidance",
+          "Improve answer faithfulness to the source playbook",
+          "Increase retrieval precision for playbook-specific recommendations and benchmarks",
+          "Support faster campaign, commerce, and retail media planning decisions"
+        ],
+        "category": "genai",
+        "dataset": {
+          "description": "Quick Commerce Playbook PDF covering India quick commerce strategy, market context, and commerce recommendations.",
+          "source": {
+            "row_count": 12,
+            "s3_path": "https://vector-forge-s3.s3.us-west-2.amazonaws.com/datasets/quick-commerce-playbook-india-2025-by-mma-global-india-publicis-commerce_final.pdf"
+          }
+        },
+        "description": "Build an AutoRAG pipeline that answers questions from the Quick Commerce Playbook while minimizing hallucinations and grounding answers in the source PDF.",
+        "engine": "autorag",
+        "hypothesis_evidence": [
+          "The Quick Commerce Playbook contains market guidance, commerce strategy, benchmarks, and operational recommendations that ecommerce and quick commerce teams need to query accurately.",
+          "A grounded RAG pipeline can help teams retrieve specific playbook guidance without manually scanning the PDF.",
+          "Low hallucination risk is important because answers should stay faithful to the published playbook rather than inventing strategy or benchmarks."
+        ],
+        "id": "prob_2",
+        "name": "Quick Commerce Playbook RAG"
+      }
+    ],
+    "num_round": 3,
+    "ready_for_experiments": true,
+    "session_cost_usd": 0,
+    "session_id": "orch_20260610_113641_9977ceca"
+  },
+  "problem_results": [
+    {
+      "designer": "autogluon",
+      "designer_run_dir": "/Users/arusaddi1/Documents/nxt-hack/VectorForgeV1/backend/modelbuilder/runs/orch_20260610_113641_9977ceca/run_20260610_113641_b5490f02/designers/prob_1/autogluon",
+      "designer_run_id": "autogluon",
+      "mapping_path": "/Users/arusaddi1/Documents/nxt-hack/VectorForgeV1/backend/modelbuilder/runs/orch_20260610_113641_9977ceca/run_20260610_113641_b5490f02/problems/prob_1/planning/field_mapping.json",
+      "planner_input_path": "/Users/arusaddi1/Documents/nxt-hack/VectorForgeV1/backend/modelbuilder/runs/orch_20260610_113641_9977ceca/run_20260610_113641_b5490f02/problems/prob_1/planning/round_1_planner_input.json",
+      "problem_id": "prob_1",
+      "state_summary": {
+        "current_best_experiment_id": "exp_r3_linear_regularized",
+        "current_round": 3,
+        "errors": [],
+        "final_recommendation_path": "/Users/arusaddi1/Documents/nxt-hack/VectorForgeV1/backend/modelbuilder/runs/orch_20260610_113641_9977ceca/run_20260610_113641_b5490f02/designers/prob_1/autogluon/reports/final_recommendation.json",
+        "leaderboard_path": "/Users/arusaddi1/Documents/nxt-hack/VectorForgeV1/backend/modelbuilder/runs/orch_20260610_113641_9977ceca/run_20260610_113641_b5490f02/designers/prob_1/autogluon/reports/leaderboard.csv"
+      },
+      "status": "completed"
+    },
+    {
+      "designer": "autorag",
+      "designer_run_dir": "/Users/arusaddi1/Documents/nxt-hack/VectorForgeV1/backend/modelbuilder/runs/orch_20260610_113641_9977ceca/run_20260610_113641_b5490f02/designers/prob_2/autorag",
+      "designer_run_id": "run_20260610_113641_b5490f02_prob_2_autorag",
+      "mapping_path": "/Users/arusaddi1/Documents/nxt-hack/VectorForgeV1/backend/modelbuilder/runs/orch_20260610_113641_9977ceca/run_20260610_113641_b5490f02/problems/prob_2/planning/field_mapping.json",
+      "planner_input_path": "/Users/arusaddi1/Documents/nxt-hack/VectorForgeV1/backend/modelbuilder/runs/orch_20260610_113641_9977ceca/run_20260610_113641_b5490f02/problems/prob_2/planning/round_1_planner_input.json",
+      "problem_id": "prob_2",
+      "report_path": "/Users/arusaddi1/Documents/nxt-hack/VectorForgeV1/backend/modelbuilder/runs/orch_20260610_113641_9977ceca/run_20260610_113641_b5490f02/designers/prob_2/autorag/reports/agent_report.json",
+      "status": "completed"
+    }
+  ],
+  "dashboard_contract": {
+    "table_grouping": [
+      "designer",
+      "round"
+    ],
+    "autogluon_columns": [
+      "experiment_id",
+      "hypothesis",
+      "primary_metric_name",
+      "primary_metric_value",
+      "secondary_metrics"
+    ],
+    "autorag_columns": [
+      "intent",
+      "hypothesis",
+      "primary_metric_name + primary_metric_value",
+      "secondary_metrics"
+    ],
+    "preserved_payload_fields": [
+      "config",
+      "metrics",
+      "status",
+      "model_metadata",
+      "rag_config_yaml",
+      "logs",
+      "paths"
+    ]
+  },
+  "table_groups": [
+    {
+      "designer": "autogluon",
+      "problem_id": "prob_1",
+      "round": 1,
+      "title": "Traditional ML Config",
+      "rows": [
+        {
+          "id": "autogluon:prob_1:round_1:exp_r1_deployable_simple",
+          "designer": "autogluon",
+          "problem_id": "prob_1",
+          "round": 1,
+          "experiment_id": "exp_r1_deployable_simple",
+          "intent": "deployable_simple",
+          "hypothesis": "With only 100 rows and 42 columns (many categorical), high-variance tree ensembles risk overfitting. A logistic regression and random-forest-only experiment under medium_quality provides a regularised, interpretable benchmark. If this matches or beats the quality_search, it signals severe overfitting risk and will guide Round 2 toward simpler or heavily regularised models.",
+          "primary_metric_name": "roc_auc",
+          "primary_metric_value": 0.5544871794871795,
+          "secondary_metrics": {
+            "accuracy": 0.6,
+            "balanced_accuracy": 0.5961538461538461,
+            "f1": 0.6428571428571429,
+            "mcc": 0.19611613513818404,
+            "precision": 0.6,
+            "recall": 0.6923076923076923
+          }
+        },
+        {
+          "id": "autogluon:prob_1:round_1:exp_r1_fast_baseline",
+          "designer": "autogluon",
+          "problem_id": "prob_1",
+          "round": 1,
+          "experiment_id": "exp_r1_fast_baseline",
+          "intent": "fast_baseline",
+          "hypothesis": "A fast sweep across default model families will establish a reliable ROC-AUC floor within tight time constraints. With only 100 rows and 42 features, even simple models may generalise well and reveal which families are worth investing in during later rounds.",
+          "primary_metric_name": "roc_auc",
+          "primary_metric_value": 0.5544871794871795,
+          "secondary_metrics": {
+            "accuracy": 0.6,
+            "balanced_accuracy": 0.5961538461538461,
+            "f1": 0.6428571428571429,
+            "mcc": 0.19611613513818404,
+            "precision": 0.6,
+            "recall": 0.6923076923076923
+          }
+        },
+        {
+          "id": "autogluon:prob_1:round_1:exp_r1_quality_search",
+          "designer": "autogluon",
+          "problem_id": "prob_1",
+          "round": 1,
+          "experiment_id": "exp_r1_quality_search",
+          "intent": "quality_search",
+          "hypothesis": "Gradient-boosted and neural models (GBM, CAT, XGB, NN_TORCH) tend to capture complex non-linear interactions among behavioral features like call_drop_rate, campaign_fatigue_score, and avg_response_latency_hours. A good_quality preset with bagging will reduce variance on this small dataset and is expected to yield the highest ROC-AUC this round.",
+          "primary_metric_name": "roc_auc",
+          "primary_metric_value": 0.5544871794871795,
+          "secondary_metrics": {
+            "accuracy": 0.6,
+            "balanced_accuracy": 0.5961538461538461,
+            "f1": 0.6428571428571429,
+            "mcc": 0.19611613513818404,
+            "precision": 0.6,
+            "recall": 0.6923076923076923
+          }
+        }
+      ]
+    },
+    {
+      "designer": "autogluon",
+      "problem_id": "prob_1",
+      "round": 2,
+      "title": "Traditional ML Config",
+      "rows": [
+        {
+          "id": "autogluon:prob_1:round_2:exp_r2_bagged_stack",
+          "designer": "autogluon",
+          "problem_id": "prob_1",
+          "round": 2,
+          "experiment_id": "exp_r2_bagged_stack",
+          "intent": "balanced_ensemble",
+          "hypothesis": "Round 1 ROC-AUC plateaued at 0.554 across all configs, suggesting high variance on only 100 rows. Enabling bagging (num_bag_folds=5) with one stacking level should dramatically reduce variance via out-of-fold predictions, extracting more signal from the small dataset and lifting ROC-AUC meaningfully above the round 1 ceiling.",
+          "primary_metric_name": "roc_auc",
+          "primary_metric_value": 0.5544871794871795,
+          "secondary_metrics": {
+            "accuracy": 0.6,
+            "balanced_accuracy": 0.5961538461538461,
+            "f1": 0.6428571428571429,
+            "mcc": 0.19611613513818404,
+            "precision": 0.6,
+            "recall": 0.6923076923076923
+          }
+        },
+        {
+          "id": "autogluon:prob_1:round_2:exp_r2_threshold_tuning",
+          "designer": "autogluon",
+          "problem_id": "prob_1",
+          "round": 2,
+          "experiment_id": "exp_r2_threshold_tuning",
+          "intent": "threshold_tuning",
+          "hypothesis": "The secondary KPIs are recall and F1, and the business goal is to maximise coverage of true churners. With a near-balanced distribution (48/52), calibrating the decision threshold post-training may shift the operating point to better recall without sacrificing too much precision, improving the actionability of the retention outreach list beyond what raw ROC-AUC improvement alone achieves.",
+          "primary_metric_name": "roc_auc",
+          "primary_metric_value": 0.5544871794871795,
+          "secondary_metrics": {
+            "accuracy": 0.6,
+            "balanced_accuracy": 0.5961538461538461,
+            "f1": 0.6428571428571429,
+            "mcc": 0.19611613513818404,
+            "precision": 0.6,
+            "recall": 0.6923076923076923
+          }
+        },
+        {
+          "id": "autogluon:prob_1:round_2:exp_r2_tree_ensemble_focus",
+          "designer": "autogluon",
+          "problem_id": "prob_1",
+          "round": 2,
+          "experiment_id": "exp_r2_tree_ensemble_focus",
+          "intent": "quality_search",
+          "hypothesis": "With 42 features and only 100 rows, deep neural nets and KNN are prone to overfit while tree-based models (GBM, CAT, XGB, RF) offer stronger inductive bias for tabular data. Restricting the search to these four families under good_quality presets with bagging should yield a better-calibrated ROC-AUC compared to round 1's unconstrained search.",
+          "primary_metric_name": "roc_auc",
+          "primary_metric_value": 0.5544871794871795,
+          "secondary_metrics": {
+            "accuracy": 0.6,
+            "balanced_accuracy": 0.5961538461538461,
+            "f1": 0.6428571428571429,
+            "mcc": 0.19611613513818404,
+            "precision": 0.6,
+            "recall": 0.6923076923076923
+          }
+        }
+      ]
+    },
+    {
+      "designer": "autogluon",
+      "problem_id": "prob_1",
+      "round": 3,
+      "title": "Traditional ML Config",
+      "rows": [
+        {
+          "id": "autogluon:prob_1:round_3:exp_r3_calibrated_threshold_final",
+          "designer": "autogluon",
+          "problem_id": "prob_1",
+          "round": 3,
+          "experiment_id": "exp_r3_calibrated_threshold_final",
+          "intent": "threshold_tuning",
+          "hypothesis": "Given that all models across 6 prior experiments have converged to identical ROC-AUC (0.5545) and identical secondary metrics (F1=0.643, Recall=0.692), the score distributions may be well-ranked but the default 0.5 threshold is suboptimal for maximizing recall and F1 on this churn task. Enabling calibrate_decision_threshold alongside a GBM+CAT+XGB tree ensemble with a weighted meta-learner may (a) better calibrate probability outputs on this small dataset and (b) shift the operating threshold toward higher recall — directly aligning with the KPI of catching all high-risk churners for retention outreach.",
+          "primary_metric_name": "roc_auc",
+          "primary_metric_value": 0.5544871794871795,
+          "secondary_metrics": {
+            "accuracy": 0.6,
+            "balanced_accuracy": 0.5961538461538461,
+            "f1": 0.6428571428571429,
+            "mcc": 0.19611613513818404,
+            "precision": 0.6,
+            "recall": 0.6923076923076923
+          }
+        },
+        {
+          "id": "autogluon:prob_1:round_3:exp_r3_linear_regularized",
+          "designer": "autogluon",
+          "problem_id": "prob_1",
+          "round": 3,
+          "experiment_id": "exp_r3_linear_regularized",
+          "intent": "deployable_simple",
+          "hypothesis": "With only 100 rows and 42 features, complex tree ensembles are prone to variance inflation and noise fitting, which likely explains the flat ROC-AUC (~0.554) across all prior rounds. A focused sweep of highly regularized linear (LR) and k-nearest-neighbor (KNN) models — which impose strong inductive biases and are less prone to overfitting in high-dimensional small-sample regimes — may extract more reliable signal from the near-balanced churn target and improve ROC-AUC by reducing model variance.",
+          "primary_metric_name": "roc_auc",
+          "primary_metric_value": 0.576923076923077,
+          "secondary_metrics": {
+            "accuracy": 0.48,
+            "balanced_accuracy": 0.47756410256410253,
+            "f1": 0.5185185185185185,
+            "mcc": -0.045162230233094555,
+            "precision": 0.5,
+            "recall": 0.5384615384615384
+          }
+        },
+        {
+          "id": "autogluon:prob_1:round_3:exp_r3_neural_linear_blend",
+          "designer": "autogluon",
+          "problem_id": "prob_1",
+          "round": 3,
+          "experiment_id": "exp_r3_neural_linear_blend",
+          "intent": "balanced_ensemble",
+          "hypothesis": "Neural networks (NN_TORCH, FASTAI) and linear models (LR) can learn smooth, low-variance decision boundaries that generalize better than tree-based models on tiny datasets with many categorical features. A weighted ensemble combining neural and linear architectures may discover non-linear feature interactions (e.g., campaign_fatigue_score × call_drop_rate) that are invisible to purely linear models, while the linear component regularizes the ensemble against overfitting — potentially breaking through the 0.554 ROC-AUC ceiling observed in all prior experiments.",
+          "primary_metric_name": "roc_auc",
+          "primary_metric_value": 0.576923076923077,
+          "secondary_metrics": {
+            "accuracy": 0.48,
+            "balanced_accuracy": 0.47756410256410253,
+            "f1": 0.5185185185185185,
+            "mcc": -0.045162230233094555,
+            "precision": 0.5,
+            "recall": 0.5384615384615384
+          }
+        }
+      ]
+    },
+    {
+      "designer": "autorag",
+      "problem_id": "prob_2",
+      "round": 1,
+      "title": "RAG Pipeline Config",
+      "rows": [
+        {
+          "id": "autorag:prob_2:round_1:r1_exp1_semantic_only_base",
+          "designer": "autorag",
+          "problem_id": "prob_2",
+          "round": 1,
+          "experiment_id": "r1_exp1_semantic_only_base",
+          "intent": "semantic_only",
+          "hypothesis": "This configuration focuses on semantic retrieval with strict grounding, which is expected to improve the faithfulness of answers to the Quick Commerce Playbook content while minimizing hallucinations.",
+          "primary_metric_name": "retrieval_f1",
+          "primary_metric_value": 0.375,
+          "secondary_metrics": {
+            "retrieval_recall": 0.75,
+            "retrieval_precision": 0.25,
+            "rouge": 0.2600873197790959,
+            "g_eval": 2.4166666666666665
+          }
+        },
+        {
+          "id": "autorag:prob_2:round_1:r1_exp2_lexical_bm25_exact",
+          "designer": "autorag",
+          "problem_id": "prob_2",
+          "round": 1,
+          "experiment_id": "r1_exp2_lexical_bm25_exact",
+          "intent": "lexical_bm25",
+          "hypothesis": "This architecture emphasizes lexical retrieval for keyword-heavy questions, ensuring precise answers for named strategies and recommendations found in the Quick Commerce Playbook.",
+          "primary_metric_name": "retrieval_f1",
+          "primary_metric_value": 0.3666666666666667,
+          "secondary_metrics": {
+            "retrieval_recall": 0.9166666666666666,
+            "retrieval_precision": 0.2291666666666666,
+            "rouge": 0.2776319325788222,
+            "g_eval": 2.4375
+          }
+        },
+        {
+          "id": "autorag:prob_2:round_1:r1_exp3_hybrid_rrf_combined",
+          "designer": "autorag",
+          "problem_id": "prob_2",
+          "round": 1,
+          "experiment_id": "r1_exp3_hybrid_rrf_combined",
+          "intent": "hybrid_rrf",
+          "hypothesis": "Combining semantic and lexical retrieval aims to leverage both contextual understanding and exact keyword matching, potentially improving both precision and recall for more comprehensive strategy guidance.",
+          "primary_metric_name": "retrieval_f1",
+          "primary_metric_value": 0.3888888888888888,
+          "secondary_metrics": {
+            "retrieval_recall": 0.6666666666666666,
+            "retrieval_precision": 0.2777777777777777,
+            "rouge": 0.2587345077837739,
+            "g_eval": 2.4166666666666665
+          }
+        }
+      ]
+    },
+    {
+      "designer": "autorag",
+      "problem_id": "prob_2",
+      "round": 2,
+      "title": "RAG Pipeline Config",
+      "rows": [
+        {
+          "id": "autorag:prob_2:round_2:r2_exp1_hybrid_rrf_strict_grounding",
+          "designer": "autorag",
+          "problem_id": "prob_2",
+          "round": 2,
+          "experiment_id": "r2_exp1_hybrid_rrf_strict_grounding",
+          "intent": "hybrid_rrf",
+          "hypothesis": "This configuration targets strict grounding to further minimize hallucinations while maintaining the hybrid retrieval advantages of both semantic and lexical methods, optimizing to find relevant recommendations from the Quick Commerce Playbook. This round applies elimination: weaker architecture families were dropped and this candidate mutates the surviving hybrid_rrf baseline.",
+          "primary_metric_name": "retrieval_f1",
+          "primary_metric_value": 0.4583333333333333,
+          "secondary_metrics": {
+            "retrieval_recall": 0.9166666666666666,
+            "retrieval_precision": 0.3055555555555556,
+            "rouge": 0.3767920318078546,
+            "g_eval": 2.4166666666666665
+          }
+        },
+        {
+          "id": "autorag:prob_2:round_2:r2_exp2_hybrid_rrf_multi_query_expansion",
+          "designer": "autorag",
+          "problem_id": "prob_2",
+          "round": 2,
+          "experiment_id": "r2_exp2_hybrid_rrf_multi_query_expansion",
+          "intent": "hybrid_rrf",
+          "hypothesis": "This configuration uses multi-query expansion to enhance the retrieval breadth, aiming to improve recall without sacrificing retrieval precision, suitable for the diverse questions about the Quick Commerce Playbook content. This round applies elimination: weaker architecture families were dropped and this candidate mutates the surviving hybrid_rrf baseline.",
+          "primary_metric_name": "retrieval_f1",
+          "primary_metric_value": 0.4888888888888889,
+          "secondary_metrics": {
+            "retrieval_recall": 0.9166666666666666,
+            "retrieval_precision": 0.3402777777777778,
+            "rouge": 0.2861508049369132,
+            "g_eval": 2.3541666666666665
+          }
+        },
+        {
+          "id": "autorag:prob_2:round_2:r2_exp3_hybrid_rrf_lower_temp",
+          "designer": "autorag",
+          "problem_id": "prob_2",
+          "round": 2,
+          "experiment_id": "r2_exp3_hybrid_rrf_lower_temp",
+          "intent": "hybrid_rrf",
+          "hypothesis": "This configuration lowers the temperature for more deterministic outputs, which can reduce variability in answer generation, ensuring consistent and grounded responses from the Quick Commerce Playbook. This round applies elimination: weaker architecture families were dropped and this candidate mutates the surviving hybrid_rrf baseline.",
+          "primary_metric_name": "retrieval_f1",
+          "primary_metric_value": 0.4583333333333333,
+          "secondary_metrics": {
+            "retrieval_recall": 0.9166666666666666,
+            "retrieval_precision": 0.3055555555555556,
+            "rouge": 0.307728325244148,
+            "g_eval": 2.5416666666666665
+          }
+        }
+      ]
+    },
+    {
+      "designer": "autorag",
+      "problem_id": "prob_2",
+      "round": 3,
+      "title": "RAG Pipeline Config",
+      "rows": [
+        {
+          "id": "autorag:prob_2:round_3:r3_exp1_hybrid_rrf_strict_grounding",
+          "designer": "autorag",
+          "problem_id": "prob_2",
+          "round": 3,
+          "experiment_id": "r3_exp1_hybrid_rrf_strict_grounding",
+          "intent": "hybrid_rrf",
+          "hypothesis": "This configuration emphasizes strict grounding to minimize hallucinations, aiming to enhance the accuracy and reliability of responses to questions about the Quick Commerce Playbook. This round applies elimination: weaker architecture families were dropped and this candidate mutates the surviving hybrid_rrf baseline.",
+          "primary_metric_name": "retrieval_f1",
+          "primary_metric_value": 0.4583333333333333,
+          "secondary_metrics": {
+            "retrieval_recall": 0.9166666666666666,
+            "retrieval_precision": 0.3055555555555556,
+            "rouge": 0.3768935815727564,
+            "g_eval": 2.270833333333333
+          }
+        },
+        {
+          "id": "autorag:prob_2:round_3:r3_exp2_hybrid_rrf_multi_query_expansion",
+          "designer": "autorag",
+          "problem_id": "prob_2",
+          "round": 3,
+          "experiment_id": "r3_exp2_hybrid_rrf_multi_query_expansion",
+          "intent": "hybrid_rrf",
+          "hypothesis": "This configuration employs multi-query expansion to enhance recall, aimed at uncovering a broader range of relevant content in the Quick Commerce Playbook while still focusing on precision. This round applies elimination: weaker architecture families were dropped and this candidate mutates the surviving hybrid_rrf baseline.",
+          "primary_metric_name": "retrieval_f1",
+          "primary_metric_value": 0.4333333333333333,
+          "secondary_metrics": {
+            "retrieval_recall": 0.8333333333333334,
+            "retrieval_precision": 0.2986111111111111,
+            "rouge": 0.2815021500859205,
+            "g_eval": 2.3125
+          }
+        },
+        {
+          "id": "autorag:prob_2:round_3:r3_exp3_hybrid_rrf_lower_temp",
+          "designer": "autorag",
+          "problem_id": "prob_2",
+          "round": 3,
+          "experiment_id": "r3_exp3_hybrid_rrf_lower_temp",
+          "intent": "hybrid_rrf",
+          "hypothesis": "This configuration reduces the temperature parameter to produce more deterministic and grounded answers, decreasing the risk of hallucinations in the Quick Commerce Playbook outputs. This round applies elimination: weaker architecture families were dropped and this candidate mutates the surviving hybrid_rrf baseline.",
+          "primary_metric_name": "retrieval_f1",
+          "primary_metric_value": 0.4583333333333333,
+          "secondary_metrics": {
+            "retrieval_recall": 0.9166666666666666,
+            "retrieval_precision": 0.3055555555555556,
+            "rouge": 0.3080711522483674,
+            "g_eval": 2.333333333333333
+          }
+        }
+      ]
+    }
+  ]
+}
