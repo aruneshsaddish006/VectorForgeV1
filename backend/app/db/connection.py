@@ -33,3 +33,7 @@ def get_connection_kwargs() -> dict[str, str | int]:
 
 def connect_db() -> psycopg.Connection:
     return psycopg.connect(**get_connection_kwargs())
+
+
+async def connect_async_db() -> psycopg.AsyncConnection:
+    return await psycopg.AsyncConnection.connect(**get_connection_kwargs())

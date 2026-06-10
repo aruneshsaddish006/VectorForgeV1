@@ -50,7 +50,7 @@ export function Composer({
   }
 
   return (
-    <div className="border-t border-border bg-surface-panel px-4 py-3 backdrop-blur-xl sm:px-6">
+    <div className="shrink-0 border-t border-border bg-surface-panel px-4 py-3 backdrop-blur-xl sm:px-6">
       <div className="mx-auto max-w-5xl">
         <div className="mb-2 flex flex-wrap gap-2">
           {SUGGESTIONS.map((s) => (
@@ -68,7 +68,7 @@ export function Composer({
         </div>
 
         <form
-          onSubmit={(e) => e.preventDefault()}
+          onSubmit={handleSubmit}
           className="app-panel-raised flex items-end gap-2 rounded-[22px] p-2 focus-within:border-primary/50"
         >
           <input

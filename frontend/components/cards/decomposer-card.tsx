@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Sparkles, ExternalLink, ArrowRight } from "lucide-react"
+import { Sparkles, ExternalLink, ArrowRight, CheckCircle2 } from "lucide-react"
 import { AgentCard, MetricBlock } from "./agent-card"
 import { Button } from "@/components/ui/button"
 import { Expandable } from "@/components/ui/expandable"
@@ -43,11 +43,13 @@ export function DecomposerCard({
   cardData,
   onConfirm,
   onAdjust,
+  confirmed = false,
   loading = false,
 }: {
   cardData: DecomposerCardData
   onConfirm?: () => void
   onAdjust?: () => void
+  confirmed?: boolean
   loading?: boolean
 }) {
   const { ml_problems = [], use_cases_mapped, projected_roi, exa_insights = {} } = cardData
@@ -131,15 +133,22 @@ export function DecomposerCard({
         )
       })}
 
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Button onClick={onConfirm} disabled={loading}>
-          Confirm strategy
-          <ArrowRight className="h-4 w-4" aria-hidden="true" />
-        </Button>
-        <Button variant="outline" onClick={onAdjust} disabled={loading}>
-          Adjust use cases
-        </Button>
-      </div>
+      {confirmed ? (
+        <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-success-soft px-3 py-1.5 text-xs font-semibold text-success">
+          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+          Strategy confirmed
+        </div>
+      ) : (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Button onClick={onConfirm} disabled={loading}>
+            Confirm strategy
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </Button>
+          <Button variant="outline" onClick={onAdjust} disabled={loading}>
+            Adjust use cases
+          </Button>
+        </div>
+      )}
     </AgentCard>
   )
 }

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ---------------------------------------------------------------------------
@@ -193,10 +193,12 @@ class RespondRequest(BaseModel):
 
 
 class InterruptPayload(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     type: InterruptType
     message: str
     data: Optional[dict[str, Any]] = None
-    options: Optional[list[str]] = None
+    options: Optional[list[Any]] = None
     estimated_cost_usd: Optional[float] = None
     questions: Optional[list[str]] = None
 

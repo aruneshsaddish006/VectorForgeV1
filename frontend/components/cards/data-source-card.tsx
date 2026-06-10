@@ -56,8 +56,42 @@ const ICONS: Record<PathId, React.ElementType> = {
   hybrid: Combine,
 }
 
-export function DataSourceCard({ paths = PATHS }: { paths?: DataSourcePath[] }) {
+export function DataSourceCard({
+  paths = PATHS,
+  onUploadFile,
+  onDiscover,
+  onEnrich,
+  loading = false,
+}: {
+  paths?: DataSourcePath[]
+  onUploadFile?: (file: File) => void
+  onDiscover?: () => void
+  onEnrich?: () => void
+  loading?: boolean
+}) {
   const [selected, setSelected] = React.useState<PathId>("exa")
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
+  const selectedPath = paths.find((p) => p.id === selected)
+
+  function handleContinue() {
+    if (loading) return
+    if (selected === "upload") {
+      fileInputRef.current?.click()
+      return
+    }
+    if (selected === "hybrid") {
+      ;(onEnrich ?? onDiscover)?.()
+      return
+    }
+    onDiscover?.()
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) onUploadFile?.(file)
+    e.target.value = ""
+  }
+
   return (
     <div className="w-full overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
       <header className="border-b border-border px-4 py-3 sm:px-5">
@@ -76,6 +110,7 @@ export function DataSourceCard({ paths = PATHS }: { paths?: DataSourcePath[] }) 
                 key={p.id}
                 role="radio"
                 aria-checked={active}
+                disabled={loading}
                 onClick={() => setSelected(p.id)}
                 className={cn(
                   "relative flex flex-col rounded-xl border p-4 text-left transition-all",
@@ -109,8 +144,19 @@ export function DataSourceCard({ paths = PATHS }: { paths?: DataSourcePath[] }) 
             )
           })}
         </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,.parquet,.pdf,.docx,.xlsx"
+          className="sr-only"
+          onChange={handleFileChange}
+          aria-hidden="true"
+          tabIndex={-1}
+        />
         <div className="mt-4 flex items-center gap-2">
-          <Button>Continue with {paths.find((p) => p.id === selected)?.title}</Button>
+          <Button onClick={handleContinue} disabled={loading}>
+            Continue with {selectedPath?.title}
+          </Button>
         </div>
       </div>
     </div>
