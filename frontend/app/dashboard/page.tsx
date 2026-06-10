@@ -8,6 +8,7 @@ import { ChatThread } from "@/components/chat/chat-thread"
 import { DatasetDetails } from "@/components/chat/dataset-details"
 import { ModelDetails } from "@/components/chat/model-details"
 import { ProjectDetails } from "@/components/chat/project-details"
+import { UseCaseDetails } from "@/components/chat/use-case-details"
 import { WorkspaceDetails } from "@/components/chat/workspace-details"
 import type { Project, Workspace } from "@/lib/api"
 
@@ -59,6 +60,8 @@ export default function DashboardPage() {
             <DatasetDetails selectedWorkspace={selectedWorkspace} />
           ) : activeView === "models" ? (
             <ModelDetails selectedWorkspace={selectedWorkspace} />
+          ) : activeView === "use-cases" ? (
+            <UseCaseDetails selectedWorkspace={selectedWorkspace} />
           ) : (
             <ChatThread selectedWorkspace={selectedWorkspace} selectedProject={selectedProject} />
           )}

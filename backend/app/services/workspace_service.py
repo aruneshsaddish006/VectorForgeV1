@@ -6,7 +6,7 @@ import psycopg
 from fastapi import HTTPException, status
 from psycopg.rows import dict_row
 
-from app.db import connect_db
+from app.db import connect_async_db, connect_db
 from app.schemas.workspace import CreateProjectRequest, CreateWorkspaceRequest
 from app.services.demo_data import DEMO_WORKSPACE
 from app.services.auth_service import db_error, get_primary_organization, make_slug, reserve_slug
@@ -122,6 +122,88 @@ def list_projects(user_id: str, workspace_id: str) -> list[dict[str, Any]]:
                     (workspace_id,),
                 )
                 return [serialize_project(row) for row in cursor.fetchall()]
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise db_error(exc) from exc
+
+
+def list_use_cases(user_id: str, workspace_id: str, project_id: str | None = None) -> list[dict[str, Any]]:
+    try:
+        with connect_db() as connection:
+            with connection.cursor(row_factory=dict_row) as cursor:
+                ensure_workspace_access(cursor, user_id, workspace_id)
+
+                params: list[Any] = [workspace_id]
+                project_filter = ""
+                if project_id:
+                    project_filter = "AND p.id = %s"
+                    params.append(project_id)
+
+                cursor.execute(
+                    f"""
+                    SELECT
+                      uc.id,
+                      uc.project_id,
+                      p.organization_id,
+                      p.name AS project_name,
+                      uc.name,
+                      uc.task_type,
+                      uc.business_problem,
+                      uc.kpis,
+                      uc.status,
+                      uc.created_at,
+                      uc.updated_at
+                    FROM use_cases uc
+                    JOIN projects p ON p.id = uc.project_id
+                    WHERE p.organization_id = %s
+                    {project_filter}
+                    ORDER BY uc.created_at DESC
+                    """,
+                    params,
+                )
+                return [serialize_use_case(row) for row in cursor.fetchall()]
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise db_error(exc) from exc
+
+
+async def list_use_cases_async(user_id: str, workspace_id: str, project_id: str | None = None) -> list[dict[str, Any]]:
+    try:
+        async with await connect_async_db() as connection:
+            async with connection.cursor(row_factory=dict_row) as cursor:
+                await ensure_workspace_access_async(cursor, user_id, workspace_id)
+
+                params: list[Any] = [workspace_id]
+                project_filter = ""
+                if project_id:
+                    project_filter = "AND p.id = %s"
+                    params.append(project_id)
+
+                await cursor.execute(
+                    f"""
+                    SELECT
+                      uc.id,
+                      uc.project_id,
+                      p.organization_id,
+                      p.name AS project_name,
+                      uc.name,
+                      uc.task_type,
+                      uc.business_problem,
+                      uc.kpis,
+                      uc.status,
+                      uc.created_at,
+                      uc.updated_at
+                    FROM use_cases uc
+                    JOIN projects p ON p.id = uc.project_id
+                    WHERE p.organization_id = %s
+                    {project_filter}
+                    ORDER BY uc.created_at DESC
+                    """,
+                    params,
+                )
+                return [serialize_use_case(row) for row in await cursor.fetchall()]
     except HTTPException:
         raise
     except psycopg.Error as exc:
@@ -313,6 +395,19 @@ def ensure_workspace_access(cursor: psycopg.Cursor, user_id: str, workspace_id: 
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this workspace.")
 
 
+async def ensure_workspace_access_async(cursor: psycopg.AsyncCursor, user_id: str, workspace_id: str) -> None:
+    await cursor.execute(
+        """
+        SELECT 1
+        FROM workspace_members
+        WHERE user_id = %s AND organization_id = %s
+        """,
+        (user_id, workspace_id),
+    )
+    if not await cursor.fetchone():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this workspace.")
+
+
 def serialize_workspace(workspace: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": str(workspace["id"]),
@@ -329,6 +424,23 @@ def serialize_project(project: dict[str, Any]) -> dict[str, Any]:
         "description": project.get("description"),
         "status": project["status"],
         "createdAt": project["created_at"].isoformat(),
+    }
+
+
+def serialize_use_case(use_case: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(use_case["id"]),
+        "workspaceId": str(use_case["organization_id"]),
+        "projectId": str(use_case["project_id"]),
+        "projectName": use_case["project_name"],
+        "name": use_case["name"],
+        "taskType": use_case["task_type"],
+        "description": use_case["business_problem"],
+        "businessProblem": use_case["business_problem"],
+        "kpis": use_case.get("kpis") or [],
+        "status": use_case["status"],
+        "createdAt": use_case["created_at"].isoformat(),
+        "updatedAt": use_case["updated_at"].isoformat(),
     }
 
 

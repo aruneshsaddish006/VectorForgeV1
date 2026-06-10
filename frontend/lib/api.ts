@@ -58,6 +58,21 @@ export type Project = {
   createdAt: string
 }
 
+export type UseCaseRecord = {
+  id: string
+  workspaceId: string
+  projectId: string
+  projectName: string
+  name: string
+  taskType: string
+  description: string
+  businessProblem: string
+  kpis: unknown[]
+  status: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type ProjectAssets = {
   workspaceId: string
   project: Project
@@ -250,6 +265,12 @@ export function fetchProjects(workspaceId: string): Promise<Project[]> {
   return getWithAuth<Project[]>(`/api/projects?workspaceId=${encodeURIComponent(workspaceId)}`)
 }
 
+export function fetchUseCases(workspaceId: string, projectId?: string): Promise<UseCaseRecord[]> {
+  const params = new URLSearchParams({ workspaceId })
+  if (projectId) params.set("projectId", projectId)
+  return getWithAuth<UseCaseRecord[]>(`/api/use-cases?${params.toString()}`)
+}
+
 export async function deleteProject(projectId: string): Promise<void> {
   const token = window.localStorage.getItem("forge_ai_token")
   if (!token) throw new Error("You need to log in first.")
@@ -367,33 +388,49 @@ export async function startConversation(sessionId: string, message: string): Pro
 
 type StreamHandlers = {
   onMessage?: (msg: import("./types").ConversationMessage, node: string) => void
+  onTokenStart?: (meta: ConversationStreamTokenMeta) => void
+  onToken?: (token: string, meta: ConversationStreamTokenMeta) => void
+  onTokenEnd?: (msg: import("./types").ConversationMessage, node: string) => void
+  onProgress?: (progress: ConversationStreamProgress) => void
   onStatus?: (status: string, node: string) => void
   onComplete?: (session: ConversationSession) => void
   onError?: (detail: string) => void
+}
+
+export type ConversationStreamTokenMeta = {
+  agentName: string | null
+  timestamp: string | null
+  cardType: string | null
+  cardData: Record<string, unknown> | null
+  node: string
+}
+
+export type ConversationStreamProgress = {
+  phase: string
+  label: string
+  detail?: string
 }
 
 /**
  * Stream the /respond endpoint as SSE, calling handlers for each event.
  * Returns an abort function to cancel mid-stream.
  */
-export function streamRespondToInterrupt(
-  sessionId: string,
-  payload: Record<string, unknown>,
+function streamConversationRequest(
+  url: string,
+  body: Record<string, unknown>,
+  accept: string,
   handlers: StreamHandlers,
 ): () => void {
   const controller = new AbortController()
 
   ;(async () => {
     try {
-      const response = await fetch(
-        `${CONV_API_BASE_URL}/api/v1/conversations/${sessionId}/respond`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        },
-      )
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: accept },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      })
       if (!response.ok) {
         handlers.onError?.(await parseApiError(response))
         return
@@ -418,6 +455,21 @@ export function streamRespondToInterrupt(
                 normaliseMessage(ev.message as Record<string, unknown>),
                 ev.node as string,
               )
+            } else if (ev.type === "token_start") {
+              handlers.onTokenStart?.(normaliseTokenMeta(ev))
+            } else if (ev.type === "token") {
+              handlers.onToken?.(String(ev.token ?? ""), normaliseTokenMeta(ev))
+            } else if (ev.type === "token_end") {
+              handlers.onTokenEnd?.(
+                normaliseMessage(ev.message as Record<string, unknown>),
+                ev.node as string,
+              )
+            } else if (ev.type === "progress") {
+              handlers.onProgress?.({
+                phase: String(ev.phase ?? ""),
+                label: String(ev.label ?? ""),
+                detail: ev.detail ? String(ev.detail) : undefined,
+              })
             } else if (ev.type === "status") {
               handlers.onStatus?.(ev.status as string, ev.node as string)
             } else if (ev.type === "complete") {
@@ -438,6 +490,42 @@ export function streamRespondToInterrupt(
   })()
 
   return () => controller.abort()
+}
+
+function normaliseTokenMeta(ev: Record<string, unknown>): ConversationStreamTokenMeta {
+  return {
+    agentName: (ev.agent_name ?? null) as string | null,
+    timestamp: (ev.timestamp ?? null) as string | null,
+    cardType: (ev.card_type ?? null) as string | null,
+    cardData: (ev.card_data ?? null) as Record<string, unknown> | null,
+    node: String(ev.node ?? ""),
+  }
+}
+
+export function streamStartConversation(
+  sessionId: string,
+  message: string,
+  handlers: StreamHandlers,
+): () => void {
+  return streamConversationRequest(
+    `${CONV_API_BASE_URL}/api/v1/conversations/stream`,
+    { session_id: sessionId, message },
+    "text/event-stream",
+    handlers,
+  )
+}
+
+export function streamRespondToInterrupt(
+  sessionId: string,
+  payload: Record<string, unknown>,
+  handlers: StreamHandlers,
+): () => void {
+  return streamConversationRequest(
+    `${CONV_API_BASE_URL}/api/v1/conversations/${sessionId}/respond`,
+    payload,
+    "text/event-stream",
+    handlers,
+  )
 }
 
 /** Resume the graph after an interrupt; resolves once the SSE stream completes. */

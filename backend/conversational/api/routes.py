@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import uuid
+import asyncio
 from datetime import datetime, timezone
 from typing import Any
 
@@ -92,6 +93,42 @@ async def start_conversation(
             "messages": state_values.get("messages", []),
         }
     }
+
+
+@router.post(
+    "/conversations/stream",
+    summary="Start a conversational session with token/progress SSE streaming",
+)
+async def start_conversation_stream(
+    body: StartConversationRequest,
+    request: Request,
+) -> StreamingResponse:
+    """Create a session and stream the first graph run.
+
+    Plain agent chat messages are emitted as token events so the UI can render a
+    live bubble. Structured strategy/card generation emits progress events only;
+    the final card payload is sent in the complete snapshot.
+    """
+    graph = _graph(request)
+    session_id = body.session_id or str(uuid.uuid4())
+    config = thread_config(session_id)
+    state = initial_state(session_id=session_id, first_message=body.message)
+
+    async def event_stream():
+        async for event in _stream_graph_run(
+            graph,
+            graph_input=state,
+            config=config,
+            session_id=session_id,
+            initial_phase="intake",
+        ):
+            yield event
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get(
@@ -170,43 +207,14 @@ async def respond_to_interrupt(
         )
 
     async def event_stream():
-        try:
-            async for chunk in graph.astream(
-                Command(resume=resume_payload),
-                config=config,
-                stream_mode="updates",
-            ):
-                for node_name, update in chunk.items():
-                    # LangGraph emits {'__interrupt__': (Interrupt(...),)} when a node
-                    # calls interrupt() — the value is a tuple, not a state delta dict.
-                    if not isinstance(update, dict):
-                        continue
-                    if update.get("status"):
-                        yield f"data: {json.dumps({'type': 'status', 'status': update['status'], 'node': node_name})}\n\n"
-                    for msg in update.get("messages", []):
-                        if isinstance(msg, dict) and msg.get("role") == "agent":
-                            yield f"data: {json.dumps({'type': 'message', 'message': msg, 'node': node_name})}\n\n"
-        except Exception as exc:
-            yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)})}\n\n"
-            return
-
-        # Graph paused at interrupt or completed — emit final snapshot
-        try:
-            final_snap = await graph.aget_state(config)
-            if final_snap is None:
-                yield f"data: {json.dumps({'type': 'error', 'detail': 'Session state lost after streaming.'})}\n\n"
-                return
-
-            state_vals = final_snap.values
-            interrupt_payload = _extract_interrupt(final_snap)
-            final_output = state_vals.get("final_output")
-
-            if state_vals.get("status") == "complete" and final_output:
-                await write_session_output(session_id, final_output)
-
-            yield f"data: {json.dumps({'type': 'complete', 'data': {'session_id': session_id, 'status': state_vals.get('status', 'unknown'), 'interrupt': interrupt_payload, 'messages': state_vals.get('messages', []), 'final_output': final_output}})}\n\n"
-        except Exception as exc:
-            yield f"data: {json.dumps({'type': 'error', 'detail': f'Failed to emit final state: {exc}' })}\n\n"
+        async for event in _stream_graph_run(
+            graph,
+            graph_input=Command(resume=resume_payload),
+            config=config,
+            session_id=session_id,
+            initial_phase=snapshot.values.get("status", "intake"),
+        ):
+            yield event
 
     return StreamingResponse(
         event_stream(),
@@ -328,6 +336,187 @@ def _extract_interrupt(snapshot) -> dict | None:
         if interrupts:
             return getattr(interrupts[0], "value", None)
     return None
+
+
+async def _stream_graph_run(
+    graph,
+    graph_input,
+    config: dict,
+    session_id: str,
+    initial_phase: str,
+):
+    """Stream a graph invocation as SSE.
+
+    Text-only agent messages are split into token events for a live chat feel.
+    Strategy/card events stay atomic; while they are being produced the UI gets
+    progress updates instead of partial structured output.
+    """
+    queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+    phase_state = {"phase": initial_phase, "strategy": initial_phase == "decomposing"}
+
+    async def run_graph() -> None:
+        try:
+            async for chunk in graph.astream(
+                graph_input,
+                config=config,
+                stream_mode="updates",
+            ):
+                for node_name, update in chunk.items():
+                    if not isinstance(update, dict):
+                        continue
+
+                    next_status = update.get("status")
+                    if next_status:
+                        phase_state["phase"] = next_status
+                        if next_status == "decomposing":
+                            phase_state["strategy"] = True
+                            await queue.put({
+                                "type": "progress",
+                                "phase": "strategy",
+                                "label": "Generating AI strategy",
+                                "detail": "Mapping the business problem into feasible ML and RAG use cases.",
+                            })
+                        else:
+                            await queue.put({
+                                "type": "status",
+                                "status": next_status,
+                                "node": node_name,
+                            })
+
+                    for msg in update.get("messages", []):
+                        if not isinstance(msg, dict) or msg.get("role") != "agent":
+                            continue
+                        if msg.get("card_type") == "strategy":
+                            await queue.put({
+                                "type": "progress",
+                                "phase": "strategy",
+                                "label": "Strategy ready",
+                                "detail": "Finalizing the recommendation card and approval checkpoint.",
+                            })
+                            continue
+                        await _enqueue_tokenized_message(queue, msg, node_name)
+
+            await queue.put({"type": "graph_done"})
+        except Exception as exc:
+            await queue.put({"type": "error", "detail": str(exc)})
+        finally:
+            await queue.put(None)
+
+    graph_task = asyncio.create_task(run_graph())
+    progress_task = asyncio.create_task(_strategy_progress(queue, phase_state))
+    had_error = False
+
+    try:
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
+            if event.get("type") == "graph_done":
+                continue
+            if event.get("type") == "error":
+                had_error = True
+            yield _sse(event)
+    finally:
+        progress_task.cancel()
+        if not graph_task.done():
+            graph_task.cancel()
+
+    if graph_task.done() and not graph_task.cancelled():
+        try:
+            graph_task.result()
+        except Exception as exc:
+            yield _sse({"type": "error", "detail": str(exc)})
+            return
+
+    if had_error:
+        return
+
+    try:
+        final_snap = await graph.aget_state(config)
+        if final_snap is None:
+            yield _sse({"type": "error", "detail": "Session state lost after streaming."})
+            return
+
+        state_vals = final_snap.values
+        interrupt_payload = _extract_interrupt(final_snap)
+        final_output = state_vals.get("final_output")
+
+        if state_vals.get("status") == "complete" and final_output:
+            await write_session_output(session_id, final_output)
+
+        yield _sse({
+            "type": "complete",
+            "data": {
+                "session_id": session_id,
+                "status": state_vals.get("status", "unknown"),
+                "interrupt": interrupt_payload,
+                "messages": state_vals.get("messages", []),
+                "final_output": final_output,
+            },
+        })
+    except Exception as exc:
+        yield _sse({"type": "error", "detail": f"Failed to emit final state: {exc}"})
+
+
+async def _enqueue_tokenized_message(
+    queue: asyncio.Queue[dict[str, Any] | None],
+    message: dict[str, Any],
+    node_name: str,
+) -> None:
+    content = str(message.get("content") or "")
+    if not content:
+        await queue.put({"type": "message", "message": message, "node": node_name})
+        return
+
+    base_event = {
+        "agent_name": message.get("agent_name"),
+        "timestamp": message.get("timestamp"),
+        "card_type": message.get("card_type"),
+        "card_data": message.get("card_data"),
+        "node": node_name,
+    }
+    await queue.put({"type": "token_start", **base_event})
+    for token in _text_tokens(content):
+        await queue.put({"type": "token", "token": token, **base_event})
+        await asyncio.sleep(0.01)
+    await queue.put({"type": "token_end", "message": message, **base_event})
+
+
+async def _strategy_progress(
+    queue: asyncio.Queue[dict[str, Any] | None],
+    phase_state: dict[str, Any],
+) -> None:
+    updates = [
+        ("Analysing the business usecase", "Understanding the business problem statement."),
+        ("Auditing constraints", "Checking available data, labels, and feasibility signals."),
+        ("Routing model types", "Matching each use case to ML Training execution paths."),
+        ("Enriching evidence", "Looking up benchmarks and external context for the recommendation."),
+        ("Preparing final AI strategy", "Packaging the strategy so you can confirm or adjust it."),
+    ]
+    index = 0
+    while True:
+        await asyncio.sleep(2.0)
+        if not phase_state.get("strategy"):
+            continue
+        label, detail = updates[index % len(updates)]
+        index += 1
+        await queue.put({
+            "type": "progress",
+            "phase": "strategy",
+            "label": label,
+            "detail": detail,
+        })
+
+
+def _text_tokens(content: str) -> list[str]:
+    words = content.split(" ")
+    if len(words) <= 1:
+        return [content]
+    return [f"{word} " if index < len(words) - 1 else word for index, word in enumerate(words)]
+
+
+def _sse(event: dict[str, Any]) -> str:
+    return f"data: {json.dumps(event)}\n\n"
 
 
 def _answers_to_text(payload: dict) -> str:

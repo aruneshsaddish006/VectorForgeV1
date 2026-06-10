@@ -40,7 +40,7 @@ const PRIMARY_NAV: NavItem[] = [
   { id: "models", label: "Models", icon: Cpu },
   { id: "use-cases", label: "Use Cases", icon: Lightbulb },
   { id: "rag", label: "RAG Pipelines", icon: Network },
-  { id: "chat", label: "Agent Chat", icon: MessageSquare },
+  { id: "chat", label: "Build AI", icon: MessageSquare },
   { id: "deployments", label: "Deployments", icon: CloudCog },
 ]
 
