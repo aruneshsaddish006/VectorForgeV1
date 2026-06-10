@@ -1,0 +1,35 @@
+{
+  "business_problem": "Build a RAG pipeline over research papers that answers questions with low hallucination risk and grounded citations from the source documents.",
+  "domain": "research",
+  "constraint_summary": "The dataset contains research papers with images and tables. Parsing and chunking should prefer robust PDF extraction and conservative overlapping chunks. The primary business metric is low hallucinations.",
+  "ml_problems": [
+    {
+      "id": "prob_1",
+      "name": "Research Paper RAG",
+      "description": "Build an AutoRAG pipeline that answers questions from research papers while minimizing hallucinations.",
+      "category": "genai",
+      "engine": "autorag",
+      "autogluon_task_type": null,
+      "hypothesis_evidence": [
+        "Research papers contain dense technical claims, equations, tables, and figures, so grounded retrieval is critical.",
+        "Low hallucination risk requires strict grounding and evaluation with retrieval precision, retrieval F1, ROUGE, and judge-style generation quality."
+      ],
+      "business_kpis": [
+        "Minimize hallucinated answers",
+        "Prefer answers grounded in retrieved source passages",
+        "Maintain enough retrieval coverage to answer technical questions"
+      ],
+      "dataset": {
+        "description": "Research paper PDFs with images and tables.",
+        "source": {
+          "s3_path": "https://vector-forge-s3.s3.us-west-2.amazonaws.com/datasets/1706.03762v7.pdf",
+          "row_count": 12
+        }
+      }
+    }
+  ],
+  "session_cost_usd": 0.0,
+  "ready_for_experiments": true,
+  "max_experiment_per_round": 2,
+  "num_round": 2
+}

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import ssl
 from typing import Any
 
 
@@ -27,7 +28,8 @@ def _elastic_cache_redis_url() -> str:
     # ElastiCache endpoints are typically TLS (rediss://) when in-transit
     # encryption is enabled; set the URL scheme accordingly in the env var.
     return (
-        os.environ.get("VECTORFORGE_ELASTICACHE_REDIS_URL")
+        os.environ.get("VECTORFORGE_REDIS_URL")
+        or os.environ.get("VECTORFORGE_ELASTICACHE_REDIS_URL")
         or os.environ.get("ELASTICACHE_REDIS_URL")
         or os.environ.get("REDIS_URL")
         or "redis://localhost:6379"
@@ -47,7 +49,19 @@ async def get_session_output(session_id: str) -> dict[str, Any] | None:
     """
     import redis.asyncio as aioredis
 
-    elastic_cache_redis_client = aioredis.from_url(_elastic_cache_redis_url(), decode_responses=True)
+    redis_url = _elastic_cache_redis_url()
+    if redis_url.startswith("rediss://"):
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        elastic_cache_redis_client = aioredis.from_url(
+            redis_url,
+            decode_responses=True,
+            ssl=ctx,
+            ssl_cert_reqs=None,
+        )
+    else:
+        elastic_cache_redis_client = aioredis.from_url(redis_url, decode_responses=True)
     try:
         raw = await elastic_cache_redis_client.get(conv_key(session_id))
     finally:

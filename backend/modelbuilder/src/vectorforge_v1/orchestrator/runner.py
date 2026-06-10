@@ -652,6 +652,7 @@ def _load_env_files() -> None:
     for path in _candidate_env_paths():
         if path.exists():
             _load_env_file(path)
+    _alias_redis_env()
 
 
 def _candidate_env_paths() -> list[Path]:
@@ -660,6 +661,7 @@ def _candidate_env_paths() -> list[Path]:
     return [
         Path.cwd() / ".env",
         package_root / ".env",
+        repo_root / "conversational" / ".env",
         repo_root / ".env",
         repo_root.parent / ".env",
     ]
@@ -675,6 +677,18 @@ def _load_env_file(path: Path) -> None:
         value = value.strip().strip('"').strip("'")
         if key and key not in os.environ:
             os.environ[key] = value
+
+
+def _alias_redis_env() -> None:
+    redis_url = (
+        os.environ.get("VECTORFORGE_REDIS_URL")
+        or os.environ.get("VECTORFORGE_ELASTICACHE_REDIS_URL")
+        or os.environ.get("ELASTICACHE_REDIS_URL")
+        or os.environ.get("REDIS_URL")
+    )
+    if redis_url:
+        os.environ.setdefault("VECTORFORGE_REDIS_URL", redis_url)
+        os.environ.setdefault("REDIS_URL", redis_url)
 
 
 def main() -> int:

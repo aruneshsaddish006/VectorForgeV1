@@ -1,0 +1,62 @@
+{
+  "business_problem": "Build a telecom churn prediction model for proactive retention outreach and a research-paper RAG pipeline that answers questions with low hallucination risk and grounded citations.",
+  "domain": "telecom_research",
+  "constraint_summary": "A telecom churn modeling CSV is available in S3 with churn as the target column. A research paper PDF is also available in S3 for RAG evaluation. The run should exercise both the traditional AutoGluon path and the GenAI AutoRAG path.",
+  "ml_problems": [
+    {
+      "id": "prob_1",
+      "name": "Telecom Churn Prediction",
+      "description": "Predict whether a telecom customer will churn using the uploaded churn dataset.",
+      "category": "traditional",
+      "engine": "autogluon",
+      "autogluon_task_type": "binary_classification",
+      "hypothesis_evidence": [
+        "The dataset is explicitly prepared for telecom churn prediction.",
+        "The target column is churn, making this a binary classification problem."
+      ],
+      "business_kpis": [
+        "Identify high-risk churn customers for retention outreach",
+        "Improve retention campaign targeting precision"
+      ],
+      "dataset": {
+        "description": "Telecom churn prediction CSV dataset.",
+        "target_column": {
+          "inferred_name": "churn",
+          "type": "binary",
+          "reason": "The user specified churn as the prediction target."
+        },
+        "source": {
+          "s3_path": "https://vector-forge-s3.s3.us-west-2.amazonaws.com/datasets/enriched_telecom_churn-2.csv"
+        }
+      }
+    },
+    {
+      "id": "prob_2",
+      "name": "Research Paper RAG",
+      "description": "Build an AutoRAG pipeline that answers questions from research papers while minimizing hallucinations.",
+      "category": "genai",
+      "engine": "autorag",
+      "autogluon_task_type": null,
+      "hypothesis_evidence": [
+        "Research papers contain dense technical claims, equations, tables, and figures, so grounded retrieval is critical.",
+        "Low hallucination risk requires strict grounding and evaluation with retrieval precision, retrieval F1, ROUGE, and judge-style generation quality."
+      ],
+      "business_kpis": [
+        "Minimize hallucinated answers",
+        "Prefer answers grounded in retrieved source passages",
+        "Maintain enough retrieval coverage to answer technical questions"
+      ],
+      "dataset": {
+        "description": "Research paper PDFs with images and tables.",
+        "source": {
+          "s3_path": "https://vector-forge-s3.s3.us-west-2.amazonaws.com/datasets/1706.03762v7.pdf",
+          "row_count": 12
+        }
+      }
+    }
+  ],
+  "session_cost_usd": 0.0,
+  "ready_for_experiments": true,
+  "max_experiment_per_round": 2,
+  "num_round": 2
+}

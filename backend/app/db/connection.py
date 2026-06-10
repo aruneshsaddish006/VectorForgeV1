@@ -8,7 +8,11 @@ from fastapi import HTTPException, status
 from dotenv import load_dotenv
 
 
-load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+APP_ROOT = Path(__file__).resolve().parents[1]
+
+for env_path in (BACKEND_ROOT / ".env", APP_ROOT / ".env"):
+    load_dotenv(env_path, override=False)
 
 
 def get_connection_kwargs() -> dict[str, str | int]:

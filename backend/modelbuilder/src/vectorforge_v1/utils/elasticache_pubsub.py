@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import ssl
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class ElastiCacheStreamWriter:
     def __init__(self, redis_url: str | None = None, key_prefix: str | None = None) -> None:
-        self.redis_url = redis_url or os.environ.get("VECTORFORGE_REDIS_URL")
+        self.redis_url = redis_url or _redis_url_from_env()
         self.key_prefix = key_prefix or os.environ.get("VECTORFORGE_REDIS_CHANNEL_PREFIX", "vectorforge")
         self.stream_maxlen = _optional_positive_int(os.environ.get("VECTORFORGE_REDIS_STREAM_MAXLEN"))
         self._client: Any | None = None
@@ -41,10 +42,21 @@ class ElastiCacheStreamWriter:
     def _get_client(self) -> Any:
         if self._client is None:
             if not self.redis_url:
-                raise RuntimeError("VECTORFORGE_REDIS_URL is required for Redis Streams.")
+                raise RuntimeError("VECTORFORGE_REDIS_URL or REDIS_URL is required for Redis Streams.")
             import redis
 
-            self._client = redis.Redis.from_url(self.redis_url, decode_responses=True)
+            if self.redis_url.startswith("rediss://"):
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                self._client = redis.Redis.from_url(
+                    self.redis_url,
+                    decode_responses=True,
+                    ssl=ctx,
+                    ssl_cert_reqs=None,
+                )
+            else:
+                self._client = redis.Redis.from_url(self.redis_url, decode_responses=True)
         return self._client
 
     def _key(self, key: str) -> str:
@@ -111,3 +123,12 @@ def _optional_positive_int(value: str | None) -> int | None:
         return None
     resolved = int(value)
     return resolved if resolved > 0 else None
+
+
+def _redis_url_from_env() -> str | None:
+    return (
+        os.environ.get("VECTORFORGE_REDIS_URL")
+        or os.environ.get("VECTORFORGE_ELASTICACHE_REDIS_URL")
+        or os.environ.get("ELASTICACHE_REDIS_URL")
+        or os.environ.get("REDIS_URL")
+    )
