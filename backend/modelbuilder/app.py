@@ -438,6 +438,48 @@ def _summary_from_orch_id(orch_id: str) -> dict[str, Any] | None:
     return None
 
 
+def _orchestrator_run_for_session(session_id: str) -> dict[str, Any] | None:
+    meta = _read_session_meta(session_id)
+    candidate_orch_ids: list[str] = []
+    if meta.get("orch_id"):
+        candidate_orch_ids.append(str(meta["orch_id"]))
+
+    with _ORCH_LOCK:
+        for orch_id, run in _ORCH_RUNS.items():
+            if run.get("session_id") == session_id:
+                return dict(run)
+
+    for orch_id in dict.fromkeys(candidate_orch_ids):
+        with _ORCH_LOCK:
+            run = _ORCH_RUNS.get(orch_id)
+        if run:
+            return dict(run)
+        summary = _summary_from_orch_id(orch_id)
+        if summary:
+            return {"orch_id": orch_id, "source": "session_meta", **summary}
+
+    for summary_path in sorted(_RUNS_DIR.rglob("orchestrator_summary.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if summary.get("session_id") != session_id:
+            continue
+        orch_id = summary_path.parents[1].name if len(summary_path.parents) > 1 else session_id
+        return {"orch_id": orch_id, "source": "session_disk_scan", **summary}
+
+    if meta:
+        return {
+            "orch_id": meta.get("orch_id"),
+            "session_id": session_id,
+            "status": meta.get("status", "unknown"),
+            "source": "session_meta",
+            **meta,
+        }
+
+    return None
+
+
 def _resolve_autorag_run_for_session(session_id: str) -> dict[str, Any]:
     try:
         resolved_by_run_id = _resolve_autorag_run_for_run_id(session_id)
@@ -1115,20 +1157,23 @@ def get_orchestrator_run(orch_id: str) -> dict[str, Any]:
 
     Returns the run status, and — when completed — the full result dict
     including `problem_results` with each designer's `designer_run_id` and
-    `designer_run_dir`.
+    `designer_run_dir`. The path id may be either the returned `orch_id` or
+    the original conversational `session_id`.
     """
+    _load_env_files()
     with _ORCH_LOCK:
         run = _ORCH_RUNS.get(orch_id)
 
     if not run:
-        # Fall back: check if a run directory was written to disk
-        summary_path = _RUNS_DIR / orch_id / "reports" / "orchestrator_summary.json"
-        if summary_path.exists():
-            try:
-                summary = json.loads(summary_path.read_text(encoding="utf-8"))
-                return {"orch_id": orch_id, "source": "disk", **summary}
-            except Exception:
-                pass
+        summary = _summary_from_orch_id(orch_id)
+        if summary:
+            return {"orch_id": orch_id, "source": "disk", **summary}
+
+        session_run = _orchestrator_run_for_session(orch_id)
+        if session_run:
+            session_run.setdefault("requested_id", orch_id)
+            return session_run
+
         raise HTTPException(status_code=404, detail=f"Orchestrator run '{orch_id}' not found")
 
     return dict(run)
