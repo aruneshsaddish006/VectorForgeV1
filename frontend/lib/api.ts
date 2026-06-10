@@ -371,6 +371,7 @@ function normaliseInterrupt(raw: unknown): InterruptPayload | null {
     problemId: (r.problem_id ?? null) as string | null,
     problemName: (r.problem_name ?? null) as string | null,
     engine: (r.engine ?? null) as string | null,
+    acceptedFormats: (r.accepted_formats ?? null) as string | null,
   }
 }
 
@@ -443,6 +444,8 @@ function streamConversationRequest(
   const controller = new AbortController()
 
   ;(async () => {
+    let settled = false
+
     try {
       const response = await fetch(url, {
         method: "POST",
@@ -452,6 +455,7 @@ function streamConversationRequest(
       })
       if (!response.ok) {
         handlers.onError?.(await parseApiError(response))
+        settled = true
         return
       }
 
@@ -493,16 +497,30 @@ function streamConversationRequest(
               handlers.onStatus?.(ev.status as string, ev.node as string)
             } else if (ev.type === "complete") {
               handlers.onComplete?.(normaliseSession(ev.data as Record<string, unknown>))
+              settled = true
             } else if (ev.type === "error") {
               handlers.onError?.(ev.detail as string)
+              settled = true
             }
           } catch {
             // malformed SSE line — skip
           }
         }
       }
+
+      // Stream closed without a complete/error event (e.g. LLM took too long and
+      // the connection dropped mid-run).  Fall back to polling so the UI doesn't hang.
+      if (!settled) {
+        try {
+          const session = await getConversationState(sessionId)
+          handlers.onComplete?.(session)
+        } catch (pollErr) {
+          handlers.onError?.((pollErr as Error).message ?? "Stream ended unexpectedly.")
+        }
+        settled = true
+      }
     } catch (err) {
-      if ((err as Error).name !== "AbortError") {
+      if (!settled && (err as Error).name !== "AbortError") {
         handlers.onError?.((err as Error).message)
       }
     }

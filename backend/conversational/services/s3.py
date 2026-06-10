@@ -13,13 +13,17 @@ S3 key layout: {session_id}/{prob-name-slug}/{filename}
 
 from __future__ import annotations
 
+import asyncio
 import io
+import logging
 import re
 
 import boto3
 from botocore.exceptions import ClientError
 
 from conversational.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 def _get_s3_client():
@@ -60,19 +64,44 @@ async def upload_dataset(
     Returns:
         "s3://{bucket}/{session_id}/{prob-name-slug}/{filename}"
     """
-    bucket = get_settings().s3_bucket_name
+    cfg = get_settings()
+    bucket = cfg.s3_bucket_name
+
+    if not bucket:
+        raise ValueError(
+            "S3 bucket not configured — set AWS_BUCKET in .env "
+            "(e.g. AWS_BUCKET=s3://my-bucket or AWS_BUCKET=my-bucket)"
+        )
+    if not cfg.aws_access_key or not cfg.aws_secret_access_key:
+        raise ValueError(
+            "AWS credentials not configured — set AWS_ACCESS_KEY and "
+            "AWS_SECRET_ACCESS_KEY in .env"
+        )
+
     folder = _slugify(prob_name) if prob_name else prob_id
     key = f"{session_id}/{folder}/{filename}"
+    s3_path = f"s3://{bucket}/{key}"
 
-    s3 = _get_s3_client()
-    s3.upload_fileobj(
-        io.BytesIO(data),
-        bucket,
-        key,
-        ExtraArgs={"ContentType": content_type},
+    logger.info(
+        "S3 upload starting | bucket=%s key=%s size=%d bytes content_type=%s",
+        bucket, key, len(data), content_type,
     )
 
-    return f"s3://{bucket}/{key}"
+    s3 = _get_s3_client()
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(
+        None,
+        lambda: s3.upload_fileobj(
+            io.BytesIO(data),
+            bucket,
+            key,
+            ExtraArgs={"ContentType": content_type},
+        ),
+    )
+
+    logger.info("S3 upload complete | s3_path=%s", s3_path)
+    print(f"[S3] Dataset uploaded → {s3_path}")  # visible in server stdout for quick checks
+    return s3_path
 
 
 async def upload_autorag_files(

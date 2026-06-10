@@ -22,6 +22,8 @@ Resume payloads per interrupt:
 
 from __future__ import annotations
 
+import logging
+
 from langgraph.types import interrupt
 
 from conversational.graph.state import ConversationalState, agent_message
@@ -31,6 +33,8 @@ from conversational.services.exa_search import (
     search_datasets,
 )
 
+logger = logging.getLogger(__name__)
+
 
 async def dataset_sourcing_node(state: ConversationalState) -> dict:
     """Source dataset for the current sub-problem using a single interrupt per run."""
@@ -38,6 +42,7 @@ async def dataset_sourcing_node(state: ConversationalState) -> dict:
     idx: int = state.get("pending_dataset_index", 0)
 
     if idx >= len(ml_problems):
+        logger.info("All sub-problems sourced → compiling output")
         return {"status": "compiling_output"}
 
     problem = ml_problems[idx]
@@ -49,6 +54,10 @@ async def dataset_sourcing_node(state: ConversationalState) -> dict:
     dataset_description = problem.get("dataset_description", "")
 
     phase = state.get("dataset_phase", "choice")
+    logger.info(
+        "dataset_sourcing_node | idx=%d/%d prob=%r engine=%s phase=%s",
+        idx, len(ml_problems), prob_name, engine, phase,
+    )
 
     # ------------------------------------------------------------------ #
     # PHASE: choice — ask how the user wants to provide the dataset        #
@@ -56,11 +65,12 @@ async def dataset_sourcing_node(state: ConversationalState) -> dict:
     if phase == "choice":
         is_autorag = engine == "autorag"
         file_hint = (
-            "two CSV files (corpus.csv with doc_id + contents, and "
-            "qa_eval.csv with qid + query + retrieval_gt + generation_gt)"
+            "a PDF or CSV corpus file"
             if is_autorag
-            else "one CSV or Parquet file"
+            else "a CSV or Parquet file"
         )
+        accepted_formats = "pdf,csv" if is_autorag else "csv,parquet"
+        logger.info("Firing DATASET_SOURCE_CHOICE interrupt for prob=%r", prob_name)
 
         choice_resume = interrupt(
             {
@@ -69,12 +79,13 @@ async def dataset_sourcing_node(state: ConversationalState) -> dict:
                 "problem_name": prob_name,
                 "engine": engine,
                 "taxonomy_id": taxonomy_id,
+                "accepted_formats": accepted_formats,
                 "message": (
                     f"For **{prob_name}** I need {file_hint}. "
                     "How would you like to provide the dataset?"
                 ),
                 "options": [
-                    {"value": "upload", "label": "Upload file(s) now"},
+                    {"value": "upload", "label": "Upload file now"},
                     {"value": "discover", "label": "Search Kaggle / public datasets"},
                     {"value": "skip", "label": "I'll provide this later"},
                 ],
@@ -107,22 +118,21 @@ async def dataset_sourcing_node(state: ConversationalState) -> dict:
     # PHASE: upload — wait for /upload-dataset endpoint to provide s3_path #
     # ------------------------------------------------------------------ #
     if phase == "upload":
+        is_autorag = engine == "autorag"
+        accepted_formats = "pdf,csv" if is_autorag else "csv,parquet"
+        logger.info("Firing AWAITING_UPLOAD interrupt for prob=%r", prob_name)
+
         upload_resume = interrupt(
             {
                 "type": InterruptType.AWAITING_UPLOAD.value,
                 "problem_id": prob_id,
                 "problem_name": prob_name,
                 "engine": engine,
+                "accepted_formats": accepted_formats,
                 "message": (
-                    f"Please upload your dataset file for **{prob_name}** "
-                    "using the upload endpoint. "
-                    "The conversation will resume once the file is in S3."
+                    f"Upload your {'PDF or CSV corpus' if is_autorag else 'CSV or Parquet'} "
+                    f"file for **{prob_name}**."
                 ),
-                "endpoint": "POST /api/v1/conversations/{session_id}/upload-dataset",
-                "required_body_fields": {
-                    "problem_id": prob_id,
-                    "file": "<multipart file>",
-                },
             }
         )
         s3_path = (upload_resume or {}).get("s3_path", "")
@@ -185,33 +195,41 @@ async def dataset_sourcing_node(state: ConversationalState) -> dict:
         }
 
     # ------------------------------------------------------------------ #
-    # PHASE: schema — confirm / override the inferred column mapping       #
+    # PHASE: schema — preview dataset info and let user confirm            #
     # ------------------------------------------------------------------ #
     if phase == "schema":
         s3_path = state.get("dataset_pending_s3_path", "")
         is_uploaded = s3_path.startswith("s3://")
 
-        # Auto-confirm schema for direct uploads — the user already chose the
-        # file so there is no need for interactive column mapping.
-        # Only interrupt on the discover path where column names may differ.
-        if is_uploaded or not inferred_columns:
-            overrides: dict = {}
-        else:
-            schema_resume = interrupt(
-                {
-                    "type": InterruptType.SCHEMA_CONFIRMATION.value,
-                    "problem_id": prob_id,
-                    "problem_name": prob_name,
-                    "message": (
-                        f"Here are the columns I inferred for **{prob_name}**. "
-                        "Please confirm or edit the column names to match your actual dataset."
-                    ),
-                    "inferred_columns": inferred_columns,
-                    "s3_path": s3_path,
-                }
-            )
-            overrides = (schema_resume or {}).get("column_overrides", {})
+        logger.info(
+            "Schema preview phase | prob=%r s3_path=%s is_uploaded=%s",
+            prob_name, s3_path, is_uploaded,
+        )
+        if is_uploaded:
+            logger.info("[DATASET] S3 path for %r → %s", prob_name, s3_path)
+            print(f"[DATASET] {prob_name} → {s3_path}")  # server stdout for quick check
 
+        # Always show preview so user can confirm before proceeding.
+        schema_resume = interrupt(
+            {
+                "type": InterruptType.SCHEMA_CONFIRMATION.value,
+                "problem_id": prob_id,
+                "problem_name": prob_name,
+                "engine": engine,
+                "message": (
+                    f"Dataset ready for **{prob_name}**. "
+                    "Review the details below and confirm to continue."
+                ),
+                "data": {
+                    "s3_path": s3_path,
+                    "inferred_columns": inferred_columns,
+                    "dataset_description": dataset_description,
+                    "engine": engine,
+                    "is_uploaded": is_uploaded,
+                },
+            }
+        )
+        overrides = (schema_resume or {}).get("column_overrides", {})
         column_mapping = _build_column_mapping(inferred_columns, overrides)
         source_type = DatasetSourceType.UPLOAD if is_uploaded else DatasetSourceType.SKIP
 

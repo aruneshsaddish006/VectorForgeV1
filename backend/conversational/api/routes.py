@@ -24,10 +24,13 @@ S3 upload pattern:
 from __future__ import annotations
 
 import json
+import os
 import uuid
 import asyncio
 from datetime import datetime, timezone
 from typing import Any
+
+import logging
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -36,7 +39,7 @@ from langgraph.types import Command
 from conversational.graph.checkpointer import thread_config
 from conversational.graph.state import initial_state
 from conversational.models.schemas import (
-    ConversationStateResponse,
+    InterruptType,
     RespondRequest,
     StartConversationRequest,
     UploadDatasetResponse,
@@ -44,7 +47,15 @@ from conversational.models.schemas import (
 from conversational.services.redis_cache import write_session_output
 from conversational.services.s3 import upload_dataset
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["conversations"])
+
+_ALLOWED_EXTENSIONS = {".csv", ".pdf", ".parquet"}
+_EXTENSION_CONTENT_TYPES = {
+    ".pdf": "application/pdf",
+    ".csv": "text/csv",
+    ".parquet": "application/octet-stream",
+}
 
 
 def _graph(request: Request):
@@ -150,14 +161,17 @@ async def get_conversation(
     state_values = snapshot.values
     interrupt_payload = _extract_interrupt(snapshot)
 
+    # Return raw dict — avoids Pydantic stripping extra interrupt fields
+    # (problem_id, problem_name, engine, accepted_formats, etc.) that the
+    # frontend normaliseInterrupt reads directly from the payload.
     return {
-        "data": ConversationStateResponse(
-            session_id=session_id,
-            status=state_values.get("status", "intake"),
-            messages=state_values.get("messages", []),
-            interrupt=interrupt_payload,
-            final_output=state_values.get("final_output"),
-        ).model_dump()
+        "data": {
+            "session_id": session_id,
+            "status": state_values.get("status", "intake"),
+            "messages": state_values.get("messages", []),
+            "interrupt": interrupt_payload,
+            "final_output": state_values.get("final_output"),
+        }
     }
 
 
@@ -233,11 +247,14 @@ async def upload_dataset_endpoint(
     problem_id: str = Form(...),
     file: UploadFile = File(...),
 ) -> dict[str, Any]:
-    """Upload a dataset file for a specific ML sub-problem.
+    """Upload a dataset file (CSV, PDF, or Parquet) for a specific ML sub-problem.
 
-    Stores the file in S3 under session_id/<prob-name-slug>/filename, then
-    resumes the graph.  Schema confirmation is auto-accepted for uploads so
-    the graph advances directly to the next sub-problem's dataset prompt.
+    Handles two graph states transparently:
+      - dataset_source_choice: auto-advances to awaiting_upload, then resumes with s3_path
+      - awaiting_upload: resumes directly with s3_path
+
+    This means the frontend can call this endpoint from either the choice card or the
+    awaiting_upload card without needing a separate /respond call first.
     """
     graph = _graph(request)
     config = thread_config(session_id)
@@ -246,14 +263,48 @@ async def upload_dataset_endpoint(
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Session not found.")
 
+    # Validate file type by extension.
+    filename = file.filename or "dataset.csv"
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in _ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unsupported file type '{ext}'. Accepted: .csv, .pdf, .parquet",
+        )
+
+    # Detect content-type from extension when the browser sends a generic value.
+    content_type = file.content_type or _EXTENSION_CONTENT_TYPES.get(ext, "application/octet-stream")
+    if content_type in ("application/octet-stream", "binary/octet-stream"):
+        content_type = _EXTENSION_CONTENT_TYPES.get(ext, content_type)
+
+    interrupt_payload = _extract_interrupt(snapshot)
+    current_type = (interrupt_payload or {}).get("type")
+
+    logger.info(
+        "Upload request | session=%s problem_id=%s filename=%s ext=%s interrupt_type=%s",
+        session_id, problem_id, filename, ext, current_type,
+    )
+
+    _UPLOAD_INTERRUPT_TYPES = {
+        InterruptType.DATASET_SOURCE_CHOICE.value,
+        InterruptType.AWAITING_UPLOAD.value,
+    }
+    if current_type not in _UPLOAD_INTERRUPT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Graph is not awaiting dataset input (current interrupt: {current_type!r}). "
+                "Submit the dataset source choice first."
+            ),
+        )
+
     # Look up the human-readable problem name for a clean S3 key.
     ml_problems: list[dict] = snapshot.values.get("ml_sub_problems") or []
     prob = next((p for p in ml_problems if p.get("id") == problem_id), None)
     prob_name: str = prob.get("name", "") if prob else ""
 
     file_data = await file.read()
-    filename = file.filename or "dataset.csv"
-    content_type = file.content_type or "text/csv"
+    logger.info("Reading file complete | filename=%s size=%d bytes", filename, len(file_data))
 
     try:
         s3_path = await upload_dataset(
@@ -265,25 +316,33 @@ async def upload_dataset_endpoint(
             prob_name=prob_name,
         )
     except Exception as exc:
+        logger.error("S3 upload failed | session=%s error=%s", session_id, exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"S3 upload failed: {exc}",
         )
 
-    # Resume the AWAITING_UPLOAD interrupt with the S3 path.
-    # dataset_sourcing_node will auto-confirm the schema for uploads and
-    # advance to the next sub-problem (or output compilation).
+    logger.info("S3 upload done | s3_path=%s", s3_path)
+
+    # If the graph is still at the choice interrupt, advance it to awaiting_upload
+    # before sending the s3_path.
+    if current_type == InterruptType.DATASET_SOURCE_CHOICE.value:
+        logger.info("Advancing graph from dataset_source_choice → awaiting_upload")
+        await graph.ainvoke(Command(resume={"choice": "upload"}), config=config)
+
+    logger.info("Resuming graph with s3_path | prob_id=%s", problem_id)
     await graph.ainvoke(
         Command(resume={"s3_path": s3_path, "prob_id": problem_id, "filename": filename}),
         config=config,
     )
+    logger.info("Graph resumed successfully | session=%s", session_id)
 
     return {
         "data": UploadDatasetResponse(
             session_id=session_id,
             prob_id=problem_id,
             s3_path=s3_path,
-            message=f"Uploaded {filename} to {s3_path}",
+            message=f"Uploaded {filename} ({ext[1:].upper()}) to {s3_path}",
         ).model_dump()
     }
 

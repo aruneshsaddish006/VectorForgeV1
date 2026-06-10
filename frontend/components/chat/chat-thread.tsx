@@ -7,10 +7,24 @@ import { Composer } from "./composer"
 import { DecomposerCard, type DecomposerCardData } from "@/components/cards/decomposer-card"
 import { DataSourceCard } from "@/components/cards/data-source-card"
 import { DataUploadCard } from "@/components/cards/data-upload-card"
+<<<<<<< Updated upstream
+=======
+import { DataPreviewCard } from "@/components/cards/data-preview-card"
+import { UsecasePlanCard, type FinalOutput } from "@/components/cards/usecase-plan-card"
+import { ExaBuilderCard } from "@/components/cards/exa-builder-card"
+import { SchemaConfirmCard } from "@/components/cards/schema-confirm-card"
+import { TrainingCard } from "@/components/cards/training-card"
+import { RagCard } from "@/components/cards/rag-card"
+import { DeploymentCard } from "@/components/cards/deployment-card"
+import { BillingApprovalCard } from "@/components/cards/billing-approval-card"
+>>>>>>> Stashed changes
 import {
   getConversationState,
+<<<<<<< Updated upstream
   persistStrategyUseCases,
   respondToInterrupt,
+=======
+>>>>>>> Stashed changes
   streamRespondToInterrupt,
   streamStartConversation,
   uploadDataset,
@@ -461,18 +475,17 @@ export function ChatThread({
     }
   }
 
-  // Paperclip in Composer → upload directly when awaiting_upload, otherwise no-op
+  // Paperclip in Composer → upload file for current sub-problem interrupt
   function handleComposerFile(file: File) {
     const probId = session?.interrupt?.problemId
     const itype = session?.interrupt?.type
     if (!probId) return
-    if (itype === "awaiting_upload") {
+    if (itype === "awaiting_upload" || itype === "dataset_source_choice") {
       handleFileUpload(probId, file)
-    } else if (itype === "dataset_source_choice") {
-      handleChoiceAndUpload(file, probId)
     }
   }
 
+<<<<<<< Updated upstream
   // Two-step upload: send choice=upload then immediately upload the file
   async function handleChoiceAndUpload(file: File, probId: string) {
     if (!sessionId || convLoading) return
@@ -490,6 +503,19 @@ export function ChatThread({
   }
 
   // ---------------------------------------------------------------------------
+=======
+  function handleClearChat() {
+    const userId = getStoredUserId()
+    const wsId = selectedWorkspace?.id ?? DEFAULT_WORKSPACE_ID
+    const projId = selectedProject?.id ?? DEFAULT_PROJECT_ID
+    setSessionId(`${buildSessionId(userId, wsId, projId)}_${Date.now()}`)
+    setSession(null)
+    setConvStarted(false)
+    setConvError(null)
+  }
+
+  //---------------------------------------------------------------------------
+>>>>>>> Stashed changes
   // Empty states — unchanged from original
   // ---------------------------------------------------------------------------
 
@@ -517,6 +543,16 @@ export function ChatThread({
   const heroDescription =
     selectedProject.description ||
     `${selectedWorkspace.name} brings data sourcing, model search, retrieval, approvals, and deployment into one guided AI product workflow.`
+
+  const composerAccept = (() => {
+    const itype = session?.interrupt?.type
+    if (itype === "awaiting_upload" || itype === "dataset_source_choice") {
+      const fmts = session?.interrupt?.acceptedFormats
+      if (fmts) return fmts.split(",").map((f) => `.${f.trim()}`).join(",")
+      return session?.interrupt?.engine === "autorag" ? ".pdf,.csv" : ".csv,.parquet"
+    }
+    return ".csv,.parquet,.pdf"
+  })()
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
@@ -561,6 +597,17 @@ export function ChatThread({
               )
             }
 
+            if (msg.cardType === "strategy" && msg.cardData) {
+              return (
+                <AgentMessage key={`live-${i}`} agent={msg.agentName ?? "Strategy Agent"} time={formatTime(msg.timestamp)}>
+                  {msg.content}
+                  <div className="mt-3">
+                    <DecomposerCard cardData={msg.cardData as DecomposerCardData} />
+                  </div>
+                </AgentMessage>
+              )
+            }
+
             return (
               <AgentMessage key={`live-${i}`} agent={msg.agentName ?? "Agent"} time={formatTime(msg.timestamp)}>
                 {msg.content}
@@ -593,8 +640,13 @@ export function ChatThread({
           )}
 
           {/* Pending interrupt — renders specialised cards or falls back to text bubble */}
+<<<<<<< Updated upstream
           {convStarted && session?.interrupt && (() => {
             const { type, message, questions, data, problemId, problemName, engine } = session.interrupt
+=======
+          {convStarted && !convLoading && session?.interrupt && (() => {
+            const { type, message, questions, data, problemId, problemName, engine, acceptedFormats } = session.interrupt
+>>>>>>> Stashed changes
 
             if (type === "sub_problem_confirmation") {
               return (
@@ -613,9 +665,50 @@ export function ChatThread({
               return (
                 <SystemCardSlot>
                   <DataSourceCard
+<<<<<<< Updated upstream
                     onUploadFile={(file) => handleChoiceAndUpload(file, problemId ?? "")}
                     onDiscover={() => handleInterruptAction({ choice: "discover" })}
                     onEnrich={() => handleInterruptAction({ choice: "discover" })}
+=======
+                    problemName={problemName ?? undefined}
+                    acceptedFormats={acceptedFormats ?? undefined}
+                    onSelect={(choice) => {
+                      if (choice === "discover") handleInterruptAction({ choice: "discover" })
+                      else handleInterruptAction({ choice: "skip" })
+                    }}
+                    onUploadFile={(file) => handleFileUpload(problemId ?? "", file)}
+                    loading={convLoading}
+                  />
+                </SystemCardSlot>
+              )
+            }
+
+            if (type === "schema_confirmation") {
+              const preview = data as Record<string, unknown> | null
+              return (
+                <SystemCardSlot>
+                  <DataPreviewCard
+                    problemName={problemName ?? "Dataset"}
+                    engine={(preview?.engine ?? engine) as string | null}
+                    s3Path={(preview?.s3_path ?? null) as string | null}
+                    datasetDescription={(preview?.dataset_description ?? null) as string | null}
+                    inferredColumns={(preview?.inferred_columns ?? null) as Record<string, { inferred_name?: string; type?: string; confidence?: "high" | "medium" | "low" }> | null}
+                    onConfirm={() => handleInterruptAction({ confirmed: true })}
+                    onAdjust={() => handleInterruptAction({ confirmed: false })}
+                    loading={convLoading}
+                  />
+                </SystemCardSlot>
+              )
+            }
+
+            if (type === "final_review") {
+              return (
+                <SystemCardSlot>
+                  <UsecasePlanCard
+                    finalOutput={(session.interrupt?.finalOutput ?? null) as FinalOutput | null}
+                    onConfirm={() => handleInterruptAction({ confirmed: true })}
+                    onRegenerate={() => handleInterruptAction({ regenerate: true })}
+>>>>>>> Stashed changes
                     loading={convLoading}
                   />
                 </SystemCardSlot>
@@ -623,12 +716,16 @@ export function ChatThread({
             }
 
             if (type === "awaiting_upload") {
+              const accept = acceptedFormats
+                ? acceptedFormats.split(",").map((f) => `.${f.trim()}`).join(",")
+                : engine === "autorag" ? ".pdf,.csv" : ".csv,.parquet"
               return (
                 <SystemCardSlot>
                   <DataUploadCard
                     problemId={problemId ?? ""}
                     problemName={problemName ?? "Dataset"}
                     engine={(engine as "autogluon" | "autorag") ?? "autogluon"}
+                    acceptedFormats={accept}
                     onUploadFile={(file) => handleFileUpload(problemId ?? "", file)}
                     onDiscover={() => handleInterruptAction({ choice: "discover" })}
                     onSkip={() => handleInterruptAction({ choice: "skip" })}
@@ -695,6 +792,7 @@ export function ChatThread({
         onSubmit={handleSend}
         onFileSelect={handleComposerFile}
         disabled={convLoading || isComplete}
+        acceptedFormats={composerAccept}
         placeholder={
           isComplete
             ? "Conversation complete."

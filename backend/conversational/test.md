@@ -12,6 +12,52 @@
 
 ---
 
+## Telecom Churn — Quick Test (uses enriched_telecom_churn-2.csv)
+
+### Step 1 — Problem statement
+
+```
+We're a telecom operator losing subscribers every quarter. I need to predict which customers are about to churn so retention teams can intervene before it happens.
+```
+
+### Step 2 — Clarifications
+
+```
+B2C telecom, ~10,000 active subscribers, mix of DSL and Fiber optic plans. We have a labeled historical CSV with account features, usage metrics, and channel engagement data. Label column is Churn (0 = stayed, 1 = churned).
+```
+
+### Step 3 — Confirm sub-problems
+
+Click **Confirm**. Expected: one sub-problem — `tabular_binary_classification` (AutoGluon).
+
+### Step 4 — Upload dataset
+
+Click **Upload file** and select:
+
+```
+backend/conversational/dataset/enriched_telecom_churn-2.csv
+```
+
+The file has 100 rows and 40 features including tenure, contract type, internet service, monthly charges, usage trends, call drop rate, channel engagement (SMS/email/WhatsApp), and a `Churn` binary label.
+
+### Step 5 — Schema confirmation
+
+The agent should auto-detect `Churn` as the label column. Confirm with:
+
+```
+confirmed
+```
+
+### Step 6 — Final review
+
+```
+confirmed
+```
+
+**Expected:** Session completes, Redis key written with the AutoGluon experiment plan.
+
+---
+
 ## Step-by-step chat queries
 
 ### Step 1 — Start the conversation

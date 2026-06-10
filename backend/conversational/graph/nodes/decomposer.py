@@ -7,8 +7,8 @@ Applies three analytical passes in one LLM call:
 
 Infers target/label/timestamp columns per task type from the problem description.
 
-Interrupt type: "sub_problem_confirmation"
-Resume payload:  {"confirmed": true, "column_overrides": {"prob_1": {"label_column": "is_churn"}}}
+No interrupt here — transitions directly to dataset_sourcing so the user is
+immediately prompted to upload or discover data for each sub-problem.
 """
 
 from __future__ import annotations
@@ -17,10 +17,8 @@ import asyncio
 from pathlib import Path
 
 import yaml
-from langgraph.types import interrupt
 
 from conversational.graph.state import ConversationalState, agent_message
-from conversational.models.schemas import InterruptType
 from conversational.services.exa_search import search_use_case_benchmarks
 from conversational.services.llm import structured_llm_call
 
@@ -217,7 +215,7 @@ async def decomposer_node(state: ConversationalState) -> dict:
         "exa_insights": exa_insights,
     }
 
-    state_update = {
+    return {
         "status": "dataset_sourcing",
         "constraint_summary": constraint_summary,
         "ml_sub_problems": ml_problems,
@@ -230,17 +228,6 @@ async def decomposer_node(state: ConversationalState) -> dict:
             )
         ],
     }
-
-    interrupt(
-        {
-            "type": InterruptType.SUB_PROBLEM_CONFIRMATION.value,
-            "message": result.get("agent_summary", "Here are the ML sub-problems I identified."),
-            "data": card_data,
-            "options": ["confirm", "adjust"],
-        }
-    )
-
-    return state_update
 
 
 def _build_context(state: ConversationalState) -> str:

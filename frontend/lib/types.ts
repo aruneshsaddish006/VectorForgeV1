@@ -203,6 +203,7 @@ export type InterruptPayload = {
   problemId?: string | null
   problemName?: string | null
   engine?: string | null
+  acceptedFormats?: string | null
 }
 
 export type ConversationSession = {

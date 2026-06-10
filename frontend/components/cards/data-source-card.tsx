@@ -56,6 +56,7 @@ const ICONS: Record<PathId, React.ElementType> = {
   hybrid: Combine,
 }
 
+<<<<<<< Updated upstream
 export function DataSourceCard({
   paths = PATHS,
   onUploadFile,
@@ -84,6 +85,38 @@ export function DataSourceCard({
       return
     }
     onDiscover?.()
+=======
+const CHOICE_MAP: Record<PathId, "upload" | "discover" | "skip"> = {
+  upload: "upload",
+  exa: "discover",
+  hybrid: "skip",
+}
+
+export function DataSourceCard({
+  paths = PATHS,
+  problemName,
+  onSelect,
+  onUploadFile,
+  acceptedFormats,
+  loading = false,
+}: {
+  paths?: DataSourcePath[]
+  problemName?: string
+  onSelect?: (choice: "upload" | "discover" | "skip") => void
+  onUploadFile?: (file: File) => void
+  acceptedFormats?: string
+  loading?: boolean
+}) {
+  const [selected, setSelected] = React.useState<PathId>("upload")
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
+
+  function handleContinue() {
+    if (selected === "upload" && onUploadFile) {
+      fileInputRef.current?.click()
+    } else {
+      onSelect?.(CHOICE_MAP[selected])
+    }
+>>>>>>> Stashed changes
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -92,10 +125,17 @@ export function DataSourceCard({
     e.target.value = ""
   }
 
+<<<<<<< Updated upstream
+=======
+  const acceptType = acceptedFormats ?? ".csv,.parquet,.pdf"
+
+>>>>>>> Stashed changes
   return (
     <div className="w-full overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
       <header className="border-b border-border px-4 py-3 sm:px-5">
-        <h3 className="text-[15px] font-semibold text-foreground">Choose how to source training data</h3>
+        <h3 className="text-[15px] font-semibold text-foreground">
+          {problemName ? `Source data for: ${problemName}` : "Choose how to source training data"}
+        </h3>
         <p className="mt-0.5 text-xs text-muted-foreground">
           Data Agent will validate, store in your S3 bucket, and confirm the schema before any training.
         </p>
@@ -112,11 +152,13 @@ export function DataSourceCard({
                 aria-checked={active}
                 disabled={loading}
                 onClick={() => setSelected(p.id)}
+                disabled={loading}
                 className={cn(
                   "relative flex flex-col rounded-xl border p-4 text-left transition-all",
                   active
                     ? "border-primary bg-info-soft/40 ring-1 ring-primary"
                     : "border-border bg-surface hover:border-primary/40 hover:bg-surface-muted/50",
+                  loading && "pointer-events-none opacity-50",
                 )}
               >
                 {active && (
@@ -155,9 +197,22 @@ export function DataSourceCard({
         />
         <div className="mt-4 flex items-center gap-2">
           <Button onClick={handleContinue} disabled={loading}>
+<<<<<<< Updated upstream
             Continue with {selectedPath?.title}
+=======
+            Continue with {paths.find((p) => p.id === selected)?.title}
+>>>>>>> Stashed changes
           </Button>
         </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={acceptType}
+          className="sr-only"
+          onChange={handleFileChange}
+          aria-hidden="true"
+          tabIndex={-1}
+        />
       </div>
     </div>
   )

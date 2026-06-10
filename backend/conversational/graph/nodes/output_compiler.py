@@ -9,10 +9,15 @@ Resume payload: {"confirmed": true}  or  {"regenerate": true}
 
 from __future__ import annotations
 
+import json
+import logging
+
 from langgraph.types import interrupt
 
 from conversational.graph.state import ConversationalState, agent_message
 from conversational.models.schemas import InterruptType
+
+logger = logging.getLogger(__name__)
 
 
 async def output_compiler_node(state: ConversationalState) -> dict:
@@ -41,6 +46,13 @@ async def output_compiler_node(state: ConversationalState) -> dict:
         "num_round": 3,
     }
 
+    logger.info(
+        "[output_compiler] session=%s problems=%d schema:\n%s",
+        state.get("session_id", "unknown"),
+        len(experiments),
+        json.dumps(final_output, indent=2, default=str),
+    )
+
     review_resume = interrupt(
         {
             "type": InterruptType.FINAL_REVIEW.value,
@@ -54,8 +66,13 @@ async def output_compiler_node(state: ConversationalState) -> dict:
     )
 
     if (review_resume or {}).get("regenerate"):
+        logger.info("[output_compiler] user requested regenerate — routing back to decomposer")
         return {"status": "decomposing"}
 
+    logger.info(
+        "[output_compiler] confirmed — writing final_output to state and Redis | session=%s",
+        state.get("session_id", "unknown"),
+    )
     return {
         "status": "complete",
         "final_output": final_output,

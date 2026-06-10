@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ArrowUp, Paperclip, Sparkles } from "lucide-react"
+import { ArrowUp, Paperclip, Sparkles, X, FileText, Table2, File } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 const SUGGESTIONS = [
@@ -15,6 +15,14 @@ type Props = {
   onFileSelect?: (file: File) => void
   disabled?: boolean
   placeholder?: string
+  acceptedFormats?: string
+}
+
+function fileIcon(name: string) {
+  const ext = name.split(".").pop()?.toLowerCase()
+  if (ext === "pdf") return FileText
+  if (ext === "csv" || ext === "parquet") return Table2
+  return File
 }
 
 export function Composer({
@@ -22,8 +30,10 @@ export function Composer({
   onFileSelect,
   disabled = false,
   placeholder = "Describe a business problem, or ask the agent to source data…",
+  acceptedFormats = ".csv,.parquet,.pdf",
 }: Props) {
   const [value, setValue] = React.useState("")
+  const [pendingFile, setPendingFile] = React.useState<File | null>(null)
   const fileRef = React.useRef<HTMLInputElement>(null)
 
   function handleSubmit(e: React.FormEvent) {
@@ -32,6 +42,7 @@ export function Composer({
     if (!text || disabled) return
     onSubmit?.(text)
     setValue("")
+    setPendingFile(null)
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -44,10 +55,13 @@ export function Composer({
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (file) {
+      setPendingFile(file)
       onFileSelect?.(file)
       e.target.value = ""
     }
   }
+
+  const FileIcon = pendingFile ? fileIcon(pendingFile.name) : null
 
   return (
     <div className="shrink-0 border-t border-border bg-surface-panel px-4 py-3 backdrop-blur-xl sm:px-6">
@@ -67,6 +81,23 @@ export function Composer({
           ))}
         </div>
 
+        {pendingFile && FileIcon && (
+          <div className="mb-2 flex flex-wrap gap-2">
+            <span className="flex items-center gap-1.5 rounded-full border border-border bg-surface-muted pl-2 pr-1 py-1 text-xs font-medium text-foreground">
+              <FileIcon className="h-3.5 w-3.5 text-primary shrink-0" aria-hidden="true" />
+              <span className="max-w-[200px] truncate">{pendingFile.name}</span>
+              <button
+                type="button"
+                onClick={() => setPendingFile(null)}
+                className="ml-0.5 rounded-full p-0.5 text-muted-foreground hover:text-foreground"
+                aria-label="Remove attachment"
+              >
+                <X className="h-3 w-3" aria-hidden="true" />
+              </button>
+            </span>
+          </div>
+        )}
+
         <form
           onSubmit={handleSubmit}
           className="app-panel-raised flex items-end gap-2 rounded-[22px] p-2 focus-within:border-primary/50"
@@ -74,7 +105,7 @@ export function Composer({
           <input
             ref={fileRef}
             type="file"
-            accept=".csv,.parquet,.json"
+            accept={acceptedFormats}
             className="sr-only"
             onChange={handleFileChange}
             aria-hidden="true"

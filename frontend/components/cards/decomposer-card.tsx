@@ -1,7 +1,11 @@
 "use client"
 
+<<<<<<< Updated upstream
 import * as React from "react"
 import { Sparkles, ExternalLink, ArrowRight, CheckCircle2 } from "lucide-react"
+=======
+import { Sparkles, ExternalLink, ArrowRight } from "lucide-react"
+>>>>>>> Stashed changes
 import { AgentCard, MetricBlock } from "./agent-card"
 import { Button } from "@/components/ui/button"
 import { Expandable } from "@/components/ui/expandable"
@@ -133,12 +137,16 @@ export function DecomposerCard({
         )
       })}
 
+<<<<<<< Updated upstream
       {confirmed ? (
         <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-success-soft px-3 py-1.5 text-xs font-semibold text-success">
           <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
           Strategy confirmed
         </div>
       ) : (
+=======
+      {(onConfirm || onAdjust) && (
+>>>>>>> Stashed changes
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <Button onClick={onConfirm} disabled={loading}>
             Confirm strategy
