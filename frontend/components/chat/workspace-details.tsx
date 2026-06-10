@@ -104,7 +104,7 @@ export function WorkspaceDetails({
 
   return (
     <div className="scroll-thin h-full overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-5xl flex-col gap-6">
+      <div className="flex w-full flex-col gap-6">
         <section className="app-panel-raised rounded-[28px] p-6 sm:p-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -227,7 +227,7 @@ export function WorkspaceDetails({
                   type="button"
                   disabled={deleting}
                   onClick={() => handleDeleteWorkspace(confirmDeleteId)}
-                  className="inline-flex h-10 items-center justify-center rounded-full bg-destructive px-5 text-sm font-semibold text-white hover:bg-destructive/90 disabled:opacity-50"
+                  className="app-accent-shadow inline-flex h-10 items-center justify-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                 >
                   {deleting ? "Deleting..." : "Delete"}
                 </button>

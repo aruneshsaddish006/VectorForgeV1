@@ -174,7 +174,7 @@ export function ProjectDetails({
                   type="button"
                   disabled={deleting}
                   onClick={() => handleDeleteProject(confirmDeleteId)}
-                  className="inline-flex h-10 items-center justify-center rounded-full bg-destructive px-5 text-sm font-semibold text-white hover:bg-destructive/90 disabled:opacity-50"
+                  className="app-accent-shadow inline-flex h-10 items-center justify-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                 >
                   {deleting ? "Deleting..." : "Delete"}
                 </button>
