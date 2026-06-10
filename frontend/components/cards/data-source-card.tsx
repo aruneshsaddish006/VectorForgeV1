@@ -8,49 +8,37 @@ import type { DataSourcePath } from "@/lib/types"
 
 type PathId = "upload" | "exa" | "hybrid"
 
-const PATHS: {
-  id: PathId
-  icon: React.ElementType
-  title: string
-  bestFor: string
-  input: string
-  time: string
-  cost: string
-  output: string
-}[] = [
-    {
-      id: "upload",
-      icon: Upload,
-      title: "Upload my data",
-      bestFor: "You already have labelled data",
-      input: "CSV · Excel · PDF · DB connection",
-      time: "~30 sec validation",
-      cost: "No credits used",
-      output: "Validated typed schema",
-    },
-    {
-      id: "exa",
-      icon: Globe,
-      title: "Build dataset from web",
-      bestFor: "You have no training data",
-      input: "Natural language query",
-      time: "1–6 min build",
-      cost: "From $0.025 / run",
-      output: "Schema-validated JSON",
-    },
-    {
-      id: "hybrid",
-      icon: Combine,
-      title: "Enrich my data",
-      bestFor: "You have rows, need more columns",
-      input: "Seed CSV + web enrichment",
-      time: "2–8 min build",
-      cost: "From $0.10 / run",
-      output: "Merged enriched dataset",
-    },
-  ]
+const PATHS: DataSourcePath[] = [
+  {
+    id: "upload",
+    title: "Upload my data",
+    bestFor: "You already have labelled data",
+    input: "CSV · Excel · PDF · DB connection",
+    time: "~30 sec validation",
+    cost: "No credits used",
+    output: "Validated typed schema",
+  },
+  {
+    id: "exa",
+    title: "Build dataset from web",
+    bestFor: "You have no training data",
+    input: "Natural language query",
+    time: "1–6 min build",
+    cost: "From $0.025 / run",
+    output: "Schema-validated JSON",
+  },
+  {
+    id: "hybrid",
+    title: "Enrich my data",
+    bestFor: "You have rows, need more columns",
+    input: "Seed CSV + web enrichment",
+    time: "2–8 min build",
+    cost: "From $0.10 / run",
+    output: "Merged enriched dataset",
+  },
+]
 
-const ICONS: Record<PathId, React.ElementType> = {
+const ICON_MAP: Record<PathId, React.ElementType> = {
   upload: Upload,
   exa: Globe,
   hybrid: Combine,
@@ -58,32 +46,36 @@ const ICONS: Record<PathId, React.ElementType> = {
 
 export function DataSourceCard({
   paths = PATHS,
+  problemName,
+  acceptedFormats,
+  onSelect,
   onUploadFile,
-  onDiscover,
-  onEnrich,
   loading = false,
 }: {
   paths?: DataSourcePath[]
+  problemName?: string
+  acceptedFormats?: string
+  onSelect?: (choice: "upload" | "discover" | "skip") => void
   onUploadFile?: (file: File) => void
-  onDiscover?: () => void
-  onEnrich?: () => void
   loading?: boolean
 }) {
-  const [selected, setSelected] = React.useState<PathId>("exa")
+  const [selected, setSelected] = React.useState<PathId>("upload")
   const fileInputRef = React.useRef<HTMLInputElement>(null)
+
+  const acceptType = acceptedFormats ?? ".csv,.parquet,.pdf"
   const selectedPath = paths.find((p) => p.id === selected)
 
   function handleContinue() {
     if (loading) return
     if (selected === "upload") {
-      fileInputRef.current?.click()
+      if (onUploadFile) {
+        fileInputRef.current?.click()
+      } else {
+        onSelect?.("upload")
+      }
       return
     }
-    if (selected === "hybrid") {
-      ; (onEnrich ?? onDiscover)?.()
-      return
-    }
-    onDiscover?.()
+    onSelect?.(selected === "hybrid" ? "skip" : "discover")
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -91,8 +83,6 @@ export function DataSourceCard({
     if (file) onUploadFile?.(file)
     e.target.value = ""
   }
-
-  const acceptType = acceptedFormats ?? ".csv,.parquet,.pdf"
 
   return (
     <div className="w-full overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
@@ -104,10 +94,11 @@ export function DataSourceCard({
           Data Agent will validate, store in your S3 bucket, and confirm the schema before any training.
         </p>
       </header>
+
       <div className="px-4 py-4 sm:px-5">
         <div role="radiogroup" aria-label="Data source path" className="grid gap-3 md:grid-cols-3">
           {paths.map((p) => {
-            const Icon = ICONS[p.id]
+            const Icon = ICON_MAP[p.id as PathId] ?? Upload
             const active = selected === p.id
             return (
               <button
@@ -115,8 +106,7 @@ export function DataSourceCard({
                 role="radio"
                 aria-checked={active}
                 disabled={loading}
-                onClick={() => setSelected(p.id)}
-                disabled={loading}
+                onClick={() => setSelected(p.id as PathId)}
                 className={cn(
                   "relative flex flex-col rounded-xl border p-4 text-left transition-all",
                   active
@@ -150,20 +140,13 @@ export function DataSourceCard({
             )
           })}
         </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv,.parquet,.pdf,.docx,.xlsx"
-          className="sr-only"
-          onChange={handleFileChange}
-          aria-hidden="true"
-          tabIndex={-1}
-        />
+
         <div className="mt-4 flex items-center gap-2">
           <Button onClick={handleContinue} disabled={loading}>
-            Continue with {selectedPath?.title}
+            Continue with {selectedPath?.title ?? "selection"}
           </Button>
         </div>
+
         <input
           ref={fileInputRef}
           type="file"
