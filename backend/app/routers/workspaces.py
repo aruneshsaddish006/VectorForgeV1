@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 
 from app.dependencies import get_current_user
-from app.schemas.workspace import CreateProjectRequest, CreateWorkspaceRequest
+from app.schemas.workspace import CreateProjectRequest, CreateWorkspaceRequest, PersistStrategyUseCasesRequest
 from app.services import workspace_service
 
 
@@ -42,6 +42,14 @@ async def list_use_cases(
     current_user: dict[str, Any] = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
     return await workspace_service.list_use_cases_async(current_user["id"], workspace_id, project_id)
+
+
+@router.post("/use-cases/strategy", status_code=201)
+def persist_strategy_use_cases(
+    payload: PersistStrategyUseCasesRequest,
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> list[dict[str, Any]]:
+    return workspace_service.persist_strategy_use_cases(current_user["id"], payload)
 
 
 @router.delete("/projects/{project_id}", status_code=204)

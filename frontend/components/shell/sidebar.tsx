@@ -22,6 +22,7 @@ import {
   createWorkspace,
   fetchProjects,
   fetchWorkspaces,
+  persistProject,
   persistWorkspace,
   type Project,
   type Workspace,
@@ -50,6 +51,24 @@ const SECONDARY_NAV: NavItem[] = [
   { id: "settings", label: "Settings", icon: Settings },
 ]
 
+function readStoredWorkspace(): Workspace | null {
+  try {
+    const raw = window.localStorage.getItem("forge_ai_workspace")
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function readStoredProject(): Project | null {
+  try {
+    const raw = window.localStorage.getItem("forge_ai_project")
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
 export function Sidebar({
   selectedWorkspace,
   selectedProject,
@@ -77,8 +96,10 @@ export function Sidebar({
       .then((items) => {
         setWorkspaces(items)
         if (!selectedWorkspace && items[0]) {
-          onWorkspaceChange(items[0])
-          persistWorkspace(items[0])
+          const storedWorkspace = readStoredWorkspace()
+          const nextWorkspace = items.find((item) => item.id === storedWorkspace?.id) ?? items[0]
+          onWorkspaceChange(nextWorkspace)
+          persistWorkspace(nextWorkspace)
         }
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Could not load workspaces."))
@@ -94,7 +115,16 @@ export function Sidebar({
     fetchProjects(selectedWorkspace.id)
       .then((items) => {
         setProjects(items)
-        if (items[0]) onProjectChange(items[0])
+        const selectedProjectStillValid = items.find((item) => item.id === selectedProject?.id)
+        const storedProject = readStoredProject()
+        const storedProjectStillValid = items.find(
+          (item) => item.id === storedProject?.id && item.workspaceId === selectedWorkspace.id,
+        )
+        const nextProject = selectedProjectStillValid ?? storedProjectStillValid ?? items[0]
+        if (nextProject) {
+          onProjectChange(nextProject)
+          persistProject(nextProject)
+        }
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Could not load projects."))
   }, [selectedWorkspace?.id])
@@ -140,6 +170,7 @@ export function Sidebar({
       })
       setProjects((items) => [project, ...items])
       onProjectChange(project)
+      persistProject(project)
       onViewChange("projects")
       setDialog(null)
     } catch (err) {

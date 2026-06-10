@@ -73,6 +73,13 @@ export type UseCaseRecord = {
   updatedAt: string
 }
 
+export type PersistStrategyUseCase = {
+  name: string
+  taskType: string
+  businessProblem: string
+  kpis: string[]
+}
+
 export type ProjectAssets = {
   workspaceId: string
   project: Project
@@ -271,6 +278,14 @@ export function fetchUseCases(workspaceId: string, projectId?: string): Promise<
   return getWithAuth<UseCaseRecord[]>(`/api/use-cases?${params.toString()}`)
 }
 
+export function persistStrategyUseCases(payload: {
+  workspaceId: string
+  projectId: string
+  useCases: PersistStrategyUseCase[]
+}): Promise<UseCaseRecord[]> {
+  return postWithAuth<UseCaseRecord[]>("/api/use-cases/strategy", payload)
+}
+
 export async function deleteProject(projectId: string): Promise<void> {
   const token = window.localStorage.getItem("forge_ai_token")
   if (!token) throw new Error("You need to log in first.")
@@ -312,6 +327,10 @@ export async function logoutUser(): Promise<void> {
 
 export function persistWorkspace(workspace: Workspace) {
   window.localStorage.setItem("forge_ai_workspace", JSON.stringify(workspace))
+}
+
+export function persistProject(project: Project) {
+  window.localStorage.setItem("forge_ai_project", JSON.stringify(project))
 }
 
 // ---------------------------------------------------------------------------

@@ -3,16 +3,22 @@
 import * as React from "react"
 import { CalendarDays, Lightbulb, RefreshCw, Target, Workflow } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { fetchUseCases, type UseCaseRecord, type Workspace } from "@/lib/api"
+import { fetchUseCases, type Project, type UseCaseRecord, type Workspace } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
-export function UseCaseDetails({ selectedWorkspace }: { selectedWorkspace: Workspace | null }) {
+export function UseCaseDetails({
+  selectedWorkspace,
+  selectedProject,
+}: {
+  selectedWorkspace: Workspace | null
+  selectedProject: Project | null
+}) {
   const [useCases, setUseCases] = React.useState<UseCaseRecord[]>([])
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
   const loadUseCases = React.useCallback(async () => {
-    if (!selectedWorkspace) {
+    if (!selectedWorkspace || !selectedProject) {
       setUseCases([])
       return
     }
@@ -21,19 +27,21 @@ export function UseCaseDetails({ selectedWorkspace }: { selectedWorkspace: Works
     setError(null)
 
     try {
-      setUseCases(await fetchUseCases(selectedWorkspace.id))
+      setUseCases(await fetchUseCases(selectedWorkspace.id, selectedProject.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load use-case details.")
     } finally {
       setLoading(false)
     }
-  }, [selectedWorkspace?.id])
+  }, [selectedWorkspace?.id, selectedProject?.id])
 
   React.useEffect(() => {
     loadUseCases()
   }, [loadUseCases])
 
-  const activeCount = useCases.filter((useCase) => useCase.status.toLowerCase() === "active").length
+  const activeCount = useCases.filter((useCase) =>
+    ["approved", "training", "deployed"].includes(useCase.status.toLowerCase()),
+  ).length
   const projectCount = new Set(useCases.map((useCase) => useCase.projectId)).size
 
   return (
@@ -47,15 +55,15 @@ export function UseCaseDetails({ selectedWorkspace }: { selectedWorkspace: Works
                 Use Cases
               </h1>
               <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">
-                {selectedWorkspace
-                  ? `Use-case details for ${selectedWorkspace.name}, fetched asynchronously from Postgres.`
-                  : "Select a workspace to view use-case records."}
+                {selectedWorkspace && selectedProject
+                  ? `Use-case details for ${selectedWorkspace.name} / ${selectedProject.name}, fetched asynchronously from Postgres.`
+                  : "Select a workspace and project to view use-case records."}
               </p>
             </div>
             <Button
               variant="outline"
               onClick={loadUseCases}
-              disabled={loading || !selectedWorkspace}
+              disabled={loading || !selectedWorkspace || !selectedProject}
               className="rounded-full"
             >
               <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} aria-hidden="true" />
@@ -78,6 +86,8 @@ export function UseCaseDetails({ selectedWorkspace }: { selectedWorkspace: Works
 
         {!selectedWorkspace ? (
           <EmptyState title="No workspace selected" text="Open Workspaces and select one before viewing use-case details." />
+        ) : !selectedProject ? (
+          <EmptyState title="No project selected" text="Select a project before viewing project-level use cases." />
         ) : loading ? (
           <div className="app-panel-raised rounded-[28px] p-6 text-sm text-muted-foreground">
             Loading use-case details...
@@ -85,7 +95,7 @@ export function UseCaseDetails({ selectedWorkspace }: { selectedWorkspace: Works
         ) : useCases.length === 0 ? (
           <EmptyState
             title="No use cases found"
-            text="Use cases generated from strategy approval or stored in Postgres will appear here."
+            text="Use cases for the selected project will appear here after they are generated or stored in Postgres."
           />
         ) : (
           <div className="grid gap-4">

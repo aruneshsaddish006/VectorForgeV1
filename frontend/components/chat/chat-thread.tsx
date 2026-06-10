@@ -9,12 +9,14 @@ import { DataUploadCard } from "@/components/cards/data-upload-card"
 import {
   fetchUseCases,
   getConversationState,
+  persistStrategyUseCases,
   respondToInterrupt,
   streamRespondToInterrupt,
   streamStartConversation,
   uploadDataset,
   type ConversationStreamProgress,
   type ConversationStreamTokenMeta,
+  type PersistStrategyUseCase,
   type Project,
   type UseCaseRecord,
   type Workspace,
@@ -47,19 +49,88 @@ function buildSessionId(
   return `${userId}_${workspaceId}_${useCaseId}`
 }
 
+function uniqueSessionIds(ids: string[]): string[] {
+  return Array.from(new Set(ids.filter(Boolean)))
+}
+
+function buildSessionCandidates({
+  userId,
+  workspaceId,
+  projectId,
+  useCaseId,
+}: {
+  userId: string
+  workspaceId: string
+  projectId?: string | null
+  useCaseId?: string | null
+}): string[] {
+  return uniqueSessionIds([
+    buildSessionId(userId, workspaceId, useCaseId || projectId || DEFAULT_USE_CASE_ID),
+    projectId ? buildSessionId(userId, workspaceId, projectId) : "",
+    buildSessionId(userId, workspaceId, DEFAULT_USE_CASE_ID),
+  ])
+}
+
+function messageKey(message: ConversationMessage): string {
+  return [
+    message.role,
+    message.agentName ?? "",
+    message.timestamp ?? "",
+    message.cardType ?? "",
+    message.content,
+  ].join("::")
+}
+
+function mergeMessages(
+  existing: ConversationMessage[] = [],
+  incoming: ConversationMessage[] = [],
+): ConversationMessage[] {
+  const seen = new Set<string>()
+  const merged: ConversationMessage[] = []
+
+  for (const message of [...existing, ...incoming]) {
+    const key = messageKey(message)
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(message)
+  }
+
+  return merged
+}
+
+function appendMessage(
+  session: ConversationSession | null,
+  message: ConversationMessage,
+  fallbackSessionId?: string | null,
+): ConversationSession | null {
+  if (!session) {
+    if (!fallbackSessionId) return null
+    return {
+      sessionId: fallbackSessionId,
+      status: "intake",
+      messages: [message],
+      interrupt: null,
+    }
+  }
+
+  return {
+    ...session,
+    messages: mergeMessages(session.messages, [message]),
+  }
+}
+
 /** Merge server snapshot into client session.
  *  The server snapshot is authoritative for status/interrupt.
- *  For messages, keep whichever list is longer — the server snapshot can be
- *  sparse when a node interrupted before returning its state update. */
+ *  Messages are unioned because streamed messages may reach the UI before the
+ *  final checkpoint snapshot is fully available. */
 function mergeSession(
   prev: ConversationSession | null,
   updated: ConversationSession,
 ): ConversationSession {
-  const messages =
-    updated.messages.length >= (prev?.messages.length ?? 0)
-      ? updated.messages
-      : (prev?.messages ?? updated.messages)
-  return { ...updated, messages }
+  return {
+    ...updated,
+    messages: mergeMessages(prev?.messages ?? [], updated.messages ?? []),
+  }
 }
 
 function getStoredUserId(): string {
@@ -92,6 +163,17 @@ function formatTime(iso: string): string {
   }
 }
 
+function strategyToPersistedUseCases(cardData: DecomposerCardData): PersistStrategyUseCase[] {
+  return (cardData.ml_problems || []).map((problem) => ({
+    name: problem.name,
+    taskType: problem.autogluon_task_type || problem.autorag_task_type || problem.engine || "unknown",
+    businessProblem:
+      cardData.constraint_summary?.narrative ||
+      `Generated ${problem.engine === "autorag" ? "retrieval" : "machine learning"} use case: ${problem.name}`,
+    kpis: (problem.business_kpis || []).map(String),
+  }))
+}
+
 // ---------------------------------------------------------------------------
 // ChatThread
 // ---------------------------------------------------------------------------
@@ -112,6 +194,7 @@ export function ChatThread({
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [convStarted, setConvStarted] = useState(false)
   const [convLoading, setConvLoading] = useState(false)
+  const [convHydrating, setConvHydrating] = useState(false)
   const [convError, setConvError] = useState<string | null>(null)
   const [streamingAgent, setStreamingAgent] = useState<StreamingAgentMessage | null>(null)
   const [streamProgress, setStreamProgress] = useState<ConversationStreamProgress | null>(null)
@@ -129,39 +212,75 @@ export function ChatThread({
   }, [selectedWorkspace?.id, selectedProject?.id])
 
   const selectedUseCase = useCases[0] ?? null
-  const selectedUseCaseId = selectedUseCase?.id ?? selectedProject?.id ?? DEFAULT_USE_CASE_ID
 
   // Build deterministic session ID on every workspace/use-case change.
   // This is the persistence key used by the conversational service checkpoint.
   useEffect(() => {
+    if (!selectedWorkspace || !selectedProject) {
+      setSessionId(null)
+      setSession(null)
+      setConvStarted(false)
+      setConvHydrating(false)
+      setConvLoading(false)
+      return
+    }
+
+    let cancelled = false
     const userId = getStoredUserId()
-    const wsId = selectedWorkspace?.id ?? DEFAULT_WORKSPACE_ID
-    const sid = buildSessionId(userId, wsId, selectedUseCaseId)
-    setSessionId(sid)
+    const wsId = selectedWorkspace.id ?? DEFAULT_WORKSPACE_ID
+    const candidates = buildSessionCandidates({
+      userId,
+      workspaceId: wsId,
+      projectId: selectedProject.id,
+      useCaseId: selectedUseCase?.id,
+    })
+    const primarySessionId = candidates[0]
+
+    setSessionId(primarySessionId)
+    setSession(null)
+    setConvStarted(false)
     setConfirmedStrategy(null)
     setStrategyConfirmed(false)
     setStreamingAgent(null)
     setStreamProgress(null)
+    setConvError(null)
 
-    // Try to hydrate an existing session for this combination.
-    // Only clear client state on failure if we don't already have messages —
-    // a server hot-reload loses MemorySaver state but the client still has
-    // the rendered conversation; don't wipe it.
-    setConvLoading(true)
-    getConversationState(sid)
-      .then((s) => { setSession(s); setConvStarted(true) })
-      .catch(() => {
-        setSession((prev) => {
-          if (prev && prev.messages.length > 0) return prev
-          return null
-        })
-        setConvStarted((prev) => {
-          if (prev) return prev
-          return false
-        })
-      })
-      .finally(() => setConvLoading(false))
-  }, [selectedWorkspace?.id, selectedUseCaseId])
+    async function hydrateConversation() {
+      setConvHydrating(true)
+      setConvLoading(true)
+
+      for (const candidate of candidates) {
+        try {
+          const hydrated = await getConversationState(candidate)
+          if (cancelled) return
+          setSessionId(hydrated.sessionId || candidate)
+          setSession(hydrated)
+          setConvStarted(hydrated.messages.length > 0 || Boolean(hydrated.interrupt))
+          return
+        } catch {
+          // Try the next candidate. This covers new use-case scoped sessions,
+          // older project-scoped sessions, and empty workspaces without history.
+        }
+      }
+
+      if (!cancelled) {
+        setSession(null)
+        setConvStarted(false)
+        setSessionId(primarySessionId)
+      }
+    }
+
+    hydrateConversation().finally(() => {
+      if (!cancelled) {
+        setConvHydrating(false)
+        setConvLoading(false)
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedWorkspace?.id, selectedProject?.id, selectedUseCase?.id])
 
   useEffect(() => {
     if (!session) return
@@ -194,6 +313,20 @@ export function ChatThread({
     setStreamingAgent(null)
     setStreamProgress(null)
 
+    let shouldStartConversation = !convStarted
+    if (shouldStartConversation) {
+      try {
+        const hydrated = await getConversationState(sessionId)
+        if (hydrated.messages.length > 0 || hydrated.interrupt) {
+          setSession(hydrated)
+          setConvStarted(true)
+          shouldStartConversation = false
+        }
+      } catch {
+        shouldStartConversation = true
+      }
+    }
+
     // Optimistic user message so the UI responds immediately
     const userMsg: ConversationMessage = {
       role: "user",
@@ -208,7 +341,7 @@ export function ChatThread({
     setConvStarted(true)
 
     try {
-      if (!convStarted) {
+      if (shouldStartConversation) {
         await new Promise<void>((resolve, reject) => {
           streamStartConversation(sessionId, text, {
             ...streamHandlers(resolve, reject),
@@ -231,9 +364,7 @@ export function ChatThread({
   function streamHandlers(resolve: () => void, reject: (error: Error) => void) {
     return {
       onMessage(msg: ConversationMessage) {
-        setSession((prev) =>
-          prev ? { ...prev, messages: [...prev.messages, msg] } : prev,
-        )
+        setSession((prev) => appendMessage(prev, msg, sessionId))
       },
       onTokenStart(meta: ConversationStreamTokenMeta) {
         setStreamProgress(null)
@@ -251,11 +382,11 @@ export function ChatThread({
           timestamp: prev?.timestamp ?? meta.timestamp ?? new Date().toISOString(),
         }))
       },
-      onTokenEnd() {
+      onTokenEnd(msg: ConversationMessage) {
+        setSession((prev) => appendMessage(prev, msg, sessionId))
         setStreamingAgent(null)
       },
       onProgress(progress: ConversationStreamProgress) {
-        setStreamingAgent(null)
         setStreamProgress(progress)
       },
       onComplete(updated: ConversationSession) {
@@ -283,9 +414,31 @@ export function ChatThread({
       session?.interrupt?.type === "sub_problem_confirmation" &&
       session.interrupt.data
     ) {
-      setConfirmedStrategy(session.interrupt.data as DecomposerCardData)
+      const strategyData = session.interrupt.data as DecomposerCardData
+      setConfirmedStrategy(strategyData)
       setStrategyConfirmed(true)
       setSession((prev) => (prev ? { ...prev, interrupt: null } : prev))
+      if (selectedWorkspace && selectedProject) {
+        const useCasesToPersist = strategyToPersistedUseCases(strategyData)
+        if (useCasesToPersist.length > 0) {
+          try {
+            await persistStrategyUseCases({
+              workspaceId: selectedWorkspace.id,
+              projectId: selectedProject.id,
+              useCases: useCasesToPersist,
+            })
+            fetchUseCases(selectedWorkspace.id, selectedProject.id)
+              .then(setUseCases)
+              .catch(() => undefined)
+          } catch (err) {
+            setConvError(
+              err instanceof Error
+                ? `Strategy confirmed, but use cases were not saved to Postgres: ${err.message}`
+                : "Strategy confirmed, but use cases were not saved to Postgres.",
+            )
+          }
+        }
+      }
     }
     try {
       await new Promise<void>((resolve, reject) => {
@@ -373,7 +526,7 @@ export function ChatThread({
     `${selectedWorkspace.name} brings data sourcing, model search, retrieval, approvals, and deployment into one guided AI product workflow.`
 
   return (
-    <div className="relative flex h-full flex-col">
+    <div className="relative flex h-full min-h-0 flex-col">
       <div className="scroll-thin min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
           <section className="app-panel-raised overflow-hidden rounded-[28px] p-6 sm:p-8">
@@ -517,7 +670,7 @@ export function ChatThread({
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               </span>
               <div className="flex items-center rounded-2xl rounded-tl-sm border border-border bg-surface px-4 py-2.5 text-sm text-muted-foreground">
-                Thinking…
+                {convHydrating ? "Loading previous conversation..." : "Thinking..."}
               </div>
             </div>
           )}

@@ -10,13 +10,28 @@ import { ModelDetails } from "@/components/chat/model-details"
 import { ProjectDetails } from "@/components/chat/project-details"
 import { UseCaseDetails } from "@/components/chat/use-case-details"
 import { WorkspaceDetails } from "@/components/chat/workspace-details"
-import type { Project, Workspace } from "@/lib/api"
+import { persistProject, persistWorkspace, type Project, type Workspace } from "@/lib/api"
 
 export default function DashboardPage() {
   const [inspectorOpen, setInspectorOpen] = useState(true)
   const [selectedWorkspace, setSelectedWorkspace] = useState<Workspace | null>(null)
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [activeView, setActiveView] = useState("chat")
+
+  function handleWorkspaceChange(workspace: Workspace) {
+    const workspaceChanged = Boolean(selectedWorkspace && selectedWorkspace.id !== workspace.id)
+    setSelectedWorkspace(workspace)
+    persistWorkspace(workspace)
+    if (workspaceChanged) {
+      setSelectedProject(null)
+      window.localStorage.removeItem("forge_ai_project")
+    }
+  }
+
+  function handleProjectChange(project: Project) {
+    setSelectedProject(project)
+    persistProject(project)
+  }
 
   return (
     <div className="flex h-dvh w-full flex-col overflow-hidden bg-canvas p-3 text-foreground sm:p-4">
@@ -32,36 +47,30 @@ export default function DashboardPage() {
           selectedWorkspace={selectedWorkspace}
           selectedProject={selectedProject}
           activeView={activeView}
-          onWorkspaceChange={(workspace) => {
-            setSelectedWorkspace(workspace)
-            setSelectedProject(null)
-          }}
-          onProjectChange={setSelectedProject}
+          onWorkspaceChange={handleWorkspaceChange}
+          onProjectChange={handleProjectChange}
           onViewChange={setActiveView}
         />
 
-        <main className="app-panel min-w-0 flex-1 overflow-hidden rounded-[28px]">
+        <main className="app-panel flex min-w-0 flex-1 flex-col overflow-hidden rounded-[28px]">
           {activeView === "workspaces" ? (
             <WorkspaceDetails
               selectedWorkspace={selectedWorkspace}
-              onWorkspaceChange={(workspace) => {
-                setSelectedWorkspace(workspace)
-                setSelectedProject(null)
-              }}
-              onProjectChange={setSelectedProject}
+              onWorkspaceChange={handleWorkspaceChange}
+              onProjectChange={handleProjectChange}
             />
           ) : activeView === "projects" ? (
             <ProjectDetails
               selectedWorkspace={selectedWorkspace}
               selectedProject={selectedProject}
-              onProjectChange={setSelectedProject}
+              onProjectChange={handleProjectChange}
             />
           ) : activeView === "datasets" ? (
             <DatasetDetails selectedWorkspace={selectedWorkspace} />
           ) : activeView === "models" ? (
             <ModelDetails selectedWorkspace={selectedWorkspace} />
           ) : activeView === "use-cases" ? (
-            <UseCaseDetails selectedWorkspace={selectedWorkspace} />
+            <UseCaseDetails selectedWorkspace={selectedWorkspace} selectedProject={selectedProject} />
           ) : (
             <ChatThread selectedWorkspace={selectedWorkspace} selectedProject={selectedProject} />
           )}

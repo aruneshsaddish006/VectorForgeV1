@@ -5,9 +5,10 @@ from typing import Any
 import psycopg
 from fastapi import HTTPException, status
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 from app.db import connect_async_db, connect_db
-from app.schemas.workspace import CreateProjectRequest, CreateWorkspaceRequest
+from app.schemas.workspace import CreateProjectRequest, CreateWorkspaceRequest, PersistStrategyUseCasesRequest
 from app.services.demo_data import DEMO_WORKSPACE
 from app.services.auth_service import db_error, get_primary_organization, make_slug, reserve_slug
 
@@ -204,6 +205,97 @@ async def list_use_cases_async(user_id: str, workspace_id: str, project_id: str 
                     params,
                 )
                 return [serialize_use_case(row) for row in await cursor.fetchall()]
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise db_error(exc) from exc
+
+
+def persist_strategy_use_cases(user_id: str, payload: PersistStrategyUseCasesRequest) -> list[dict[str, Any]]:
+    try:
+        with connect_db() as connection:
+            with connection.cursor(row_factory=dict_row) as cursor:
+                ensure_workspace_access(cursor, user_id, payload.workspace_id)
+                cursor.execute(
+                    """
+                    SELECT id
+                    FROM projects
+                    WHERE id = %s AND organization_id = %s
+                    """,
+                    (payload.project_id, payload.workspace_id),
+                )
+                if not cursor.fetchone():
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+
+                saved: list[dict[str, Any]] = []
+                for item in payload.use_cases:
+                    cursor.execute(
+                        """
+                        SELECT
+                          uc.id,
+                          uc.project_id,
+                          p.organization_id,
+                          p.name AS project_name,
+                          uc.name,
+                          uc.task_type,
+                          uc.business_problem,
+                          uc.kpis,
+                          uc.status,
+                          uc.created_at,
+                          uc.updated_at
+                        FROM use_cases uc
+                        JOIN projects p ON p.id = uc.project_id
+                        WHERE uc.project_id = %s AND lower(uc.name) = lower(%s)
+                        LIMIT 1
+                        """,
+                        (payload.project_id, item.name.strip()),
+                    )
+                    existing = cursor.fetchone()
+                    if existing:
+                        cursor.execute(
+                            """
+                            UPDATE use_cases
+                            SET task_type = %s,
+                                business_problem = %s,
+                                kpis = %s,
+                                status = 'approved',
+                                updated_at = NOW()
+                            WHERE id = %s
+                            RETURNING id, project_id, name, task_type, business_problem, kpis, status, created_at, updated_at
+                            """,
+                            (
+                                item.task_type,
+                                item.business_problem,
+                                Jsonb(item.kpis),
+                                existing["id"],
+                            ),
+                        )
+                    else:
+                        cursor.execute(
+                            """
+                            INSERT INTO use_cases (project_id, name, task_type, business_problem, kpis, status)
+                            VALUES (%s, %s, %s, %s, %s, 'approved')
+                            RETURNING id, project_id, name, task_type, business_problem, kpis, status, created_at, updated_at
+                            """,
+                            (
+                                payload.project_id,
+                                item.name.strip(),
+                                item.task_type,
+                                item.business_problem,
+                                Jsonb(item.kpis),
+                            ),
+                        )
+
+                    row = cursor.fetchone()
+                    row["organization_id"] = payload.workspace_id
+                    row["project_name"] = existing["project_name"] if existing else None
+                    if row["project_name"] is None:
+                        cursor.execute("SELECT name FROM projects WHERE id = %s", (payload.project_id,))
+                        project = cursor.fetchone()
+                        row["project_name"] = project["name"] if project else ""
+                    saved.append(serialize_use_case(row))
+
+                return saved
     except HTTPException:
         raise
     except psycopg.Error as exc:
