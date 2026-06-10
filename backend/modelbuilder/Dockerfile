@@ -17,6 +17,7 @@ COPY pyproject.toml uv.lock* ./
 COPY README.md ./
 COPY src/ ./src/
 COPY app.py ./
+COPY .env ./ 
 
 RUN pip install --no-cache-dir --upgrade pip \
  && pip install --no-cache-dir .
