@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import Link from "next/link"
 import {
   ChevronRight,
   Search,
@@ -13,7 +13,7 @@ import {
 } from "lucide-react"
 import { ForgeAiIcon } from "@/components/brand/forge-ai-icon"
 import { Button } from "@/components/ui/button"
-import { logoutUser, type Project, type Workspace } from "@/lib/api"
+import { type Project, type Workspace } from "@/lib/api"
 
 type Theme = "light" | "dark"
 
@@ -33,19 +33,10 @@ export function TopBar({
   selectedWorkspace: Workspace | null
   selectedProject: Project | null
 }) {
-  const router = useRouter()
   const [theme, setTheme] = useState<Theme | null>(null)
-  const [accountOpen, setAccountOpen] = useState(false)
-  const [user, setUser] = useState<{ fullName?: string; email?: string } | null>(null)
 
   useEffect(() => {
     setTheme(getInitialTheme())
-    try {
-      const stored = window.localStorage.getItem("forge_ai_user")
-      setUser(stored ? JSON.parse(stored) : null)
-    } catch {
-      setUser(null)
-    }
   }, [])
 
   useEffect(() => {
@@ -64,21 +55,17 @@ export function TopBar({
     setTheme(currentTheme === "dark" ? "light" : "dark")
   }
 
-  async function handleLogout() {
-    await logoutUser()
-    router.replace("/login")
-  }
-
   const workspaceName = selectedWorkspace?.name || "Select workspace"
   const projectName = selectedProject?.name || "Select project"
-  const accountName = user?.fullName || "Signed in user"
-  const accountEmail = user?.email || "No email available"
-  const accountInitial = accountName.trim().charAt(0).toUpperCase() || "U"
 
   return (
     <header className="app-panel relative z-[100] flex min-h-20 shrink-0 items-center justify-between gap-3 rounded-[24px] px-3 sm:gap-4 sm:px-5">
       <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-        <div className="flex items-center gap-2.5">
+        <Link
+          href="/"
+          className="flex items-center gap-2.5 rounded-2xl px-1.5 py-1 text-left transition hover:bg-surface-raised/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          aria-label="Go to landing page"
+        >
           <ForgeAiIcon size="lg" priority className="rounded-full" />
           <div className="hidden leading-none sm:block">
             <div className="font-heading text-2xl font-bold tracking-tight text-foreground">Forge AI</div>
@@ -86,7 +73,7 @@ export function TopBar({
               AI Strategy Platform
             </div>
           </div>
-        </div>
+        </Link>
 
         <div className="app-control flex min-w-0 items-center gap-1.5 rounded-full px-3 py-2 text-xs sm:gap-2 sm:px-4 sm:text-sm">
           <span className="max-w-48 truncate font-semibold text-foreground">{workspaceName}</span>
@@ -139,36 +126,6 @@ export function TopBar({
           )}
         </Button>
 
-        <div className="relative ml-1">
-          <button
-            onClick={() => setAccountOpen((open) => !open)}
-            className="app-accent-shadow flex h-11 w-11 items-center justify-center rounded-full bg-primary text-base font-bold text-primary-foreground ring-4 ring-surface-raised/80"
-            aria-label="Open account menu"
-            aria-expanded={accountOpen}
-          >
-            {accountInitial}
-          </button>
-
-          {accountOpen && (
-            <div className="app-panel-raised absolute right-0 top-[calc(100%+0.75rem)] z-[120] w-64 rounded-2xl p-3">
-              <div className="flex items-center gap-3 border-b border-border pb-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary text-sm font-bold text-primary-foreground">
-                  {accountInitial}
-                </span>
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold text-foreground">{accountName}</div>
-                  <div className="truncate text-xs text-muted-foreground">{accountEmail}</div>
-                </div>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="mt-2 flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm font-semibold text-error transition hover:bg-error-soft"
-              >
-                Log out
-              </button>
-            </div>
-          )}
-        </div>
       </div>
     </header>
   )
