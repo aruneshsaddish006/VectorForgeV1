@@ -8,6 +8,7 @@ import { ChatThread } from "@/components/chat/chat-thread"
 import { DatasetDetails } from "@/components/chat/dataset-details"
 import { ModelDetails } from "@/components/chat/model-details"
 import { ProjectDetails } from "@/components/chat/project-details"
+import { SettingsDetails } from "@/components/chat/settings-details"
 import { UseCaseDetails } from "@/components/chat/use-case-details"
 import { WorkspaceDetails } from "@/components/chat/workspace-details"
 import { persistProject, persistWorkspace, type Project, type Workspace } from "@/lib/api"
@@ -70,6 +71,8 @@ export default function DashboardPage() {
             <UseCaseDetails selectedWorkspace={selectedWorkspace} selectedProject={selectedProject} />
           ) : activeView === "billing" ? (
             <BillingDetails selectedWorkspace={selectedWorkspace} />
+          ) : activeView === "settings" ? (
+            <SettingsDetails selectedWorkspace={selectedWorkspace} />
           ) : (
             <ChatThread selectedWorkspace={selectedWorkspace} selectedProject={selectedProject} />
           )}

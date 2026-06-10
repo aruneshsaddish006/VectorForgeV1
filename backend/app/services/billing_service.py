@@ -16,6 +16,7 @@ from psycopg.rows import dict_row
 
 from app.db import connect_db
 from app.services.auth_service import db_error
+from app.services import settings_service
 from app.services.workspace_service import ensure_workspace_access
 
 
@@ -69,7 +70,7 @@ def get_billing_summary(user_id: str, workspace_id: str) -> dict[str, Any]:
                         "currentPeriodStart": period_start.isoformat(),
                         "currentPeriodEnd": None,
                     },
-                    "plans": _plans_for_client(),
+                    "plans": _plans_for_client(_stripe_catalog_config(cursor, workspace_id)),
                     "usage": _usage_for_client(usage, PLAN_CATALOG[plan_id]["limits"]),
                 }
     except HTTPException:
@@ -83,22 +84,17 @@ def create_checkout_session(user_id: str, workspace_id: str, plan: str) -> dict[
     if plan_id == "free":
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Free plan does not require checkout.")
 
-    plan_config = PLAN_CATALOG[plan_id]
-    catalog_env = str(plan_config["stripeCatalogEnv"])
-    catalog_id = os.getenv(catalog_env)
-    if not catalog_id:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Stripe catalog item is not configured. Set {catalog_env} to a price_ or prod_ ID.",
-        )
-    price_id = _resolve_checkout_price_id(catalog_id)
-
     try:
         with connect_db() as connection:
             with connection.cursor(row_factory=dict_row) as cursor:
                 ensure_workspace_access(cursor, user_id, workspace_id)
                 account = _ensure_billing_account(cursor, workspace_id)
                 customer_id = account.get("stripe_customer_id")
+                stripe_values = _stripe_settings(cursor, workspace_id)
+                catalog_id = _catalog_id_for_plan(plan_id, stripe_values["config"])
+                secret_key = _stripe_secret_key(stripe_values["secrets"])
+
+        price_id = _resolve_checkout_price_id(catalog_id, secret_key)
 
         payload = {
             "mode": "subscription",
@@ -113,7 +109,7 @@ def create_checkout_session(user_id: str, workspace_id: str, plan: str) -> dict[
         if customer_id:
             payload["customer"] = customer_id
 
-        session = _stripe_request("/v1/checkout/sessions", payload)
+        session = _stripe_request("/v1/checkout/sessions", payload, secret_key)
         url = session.get("url")
         if not url:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Stripe did not return a checkout URL.")
@@ -131,6 +127,7 @@ def create_portal_session(user_id: str, workspace_id: str) -> dict[str, str]:
                 ensure_workspace_access(cursor, user_id, workspace_id)
                 account = _ensure_billing_account(cursor, workspace_id)
                 customer_id = account.get("stripe_customer_id")
+                secret_key = _stripe_secret_key(_stripe_settings(cursor, workspace_id)["secrets"])
 
         if not customer_id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No Stripe customer is linked to this workspace.")
@@ -138,6 +135,7 @@ def create_portal_session(user_id: str, workspace_id: str) -> dict[str, str]:
         session = _stripe_request(
             "/v1/billing_portal/sessions",
             {"customer": customer_id, "return_url": f"{_frontend_url()}/dashboard?billing=portal"},
+            secret_key,
         )
         url = session.get("url")
         if not url:
@@ -234,7 +232,8 @@ def _usage_item(label: str, key: str, value: Decimal | int, limit: int | None, d
     }
 
 
-def _plans_for_client() -> list[dict[str, Any]]:
+def _plans_for_client(stripe_config: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    stripe_config = stripe_config or {}
     return [
         {
             "id": plan_id,
@@ -243,7 +242,7 @@ def _plans_for_client() -> list[dict[str, Any]]:
             "summary": config["summary"],
             "features": config["features"],
             "limits": config["limits"],
-            "checkoutEnabled": bool(config["stripeCatalogEnv"] and os.getenv(str(config["stripeCatalogEnv"]))),
+            "checkoutEnabled": bool(plan_id == "free" or _catalog_id_for_plan(plan_id, stripe_config, required=False)),
         }
         for plan_id, config in PLAN_CATALOG.items()
     ]
@@ -263,7 +262,39 @@ def _frontend_url() -> str:
     return os.getenv("FRONTEND_URL") or os.getenv("NEXT_PUBLIC_APP_URL") or "http://localhost:3000"
 
 
-def _resolve_checkout_price_id(catalog_id: str) -> str:
+def _stripe_settings(cursor: psycopg.Cursor, workspace_id: str) -> dict[str, Any]:
+    return settings_service.get_provider_values(cursor, workspace_id, "stripe")
+
+
+def _stripe_catalog_config(cursor: psycopg.Cursor, workspace_id: str) -> dict[str, Any]:
+    return _stripe_settings(cursor, workspace_id)["config"]
+
+
+def _catalog_id_for_plan(plan_id: str, stripe_config: dict[str, Any], required: bool = True) -> str:
+    if plan_id == "free":
+        return ""
+    config_key = "pro_catalog_id" if plan_id == "pro" else "enterprise_catalog_id"
+    env_name = str(PLAN_CATALOG[plan_id]["stripeCatalogEnv"])
+    catalog_id = str(stripe_config.get(config_key) or os.getenv(env_name) or "").strip()
+    if required and not catalog_id:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Stripe catalog item is not configured. Save {config_key} in Settings or set {env_name}.",
+        )
+    return catalog_id
+
+
+def _stripe_secret_key(secrets: dict[str, Any]) -> str:
+    secret_key = str(secrets.get("secret_key") or os.getenv("STRIPE_SECRET_KEY") or "").strip()
+    if not secret_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Stripe is not configured. Save the Stripe secret key in Settings or set STRIPE_SECRET_KEY.",
+        )
+    return secret_key
+
+
+def _resolve_checkout_price_id(catalog_id: str, secret_key: str) -> str:
     value = catalog_id.strip()
     if value.startswith("price_"):
         return value
@@ -276,6 +307,7 @@ def _resolve_checkout_price_id(catalog_id: str) -> str:
                 "type": "recurring",
                 "limit": "10",
             },
+            secret_key,
             method="GET",
         )
         price_id = _select_monthly_price(prices.get("data") or [])
@@ -305,11 +337,7 @@ def _select_monthly_price(prices: list[dict[str, Any]]) -> str | None:
     return None
 
 
-def _stripe_request(path: str, payload: dict[str, str], method: str = "POST") -> dict[str, Any]:
-    secret_key = os.getenv("STRIPE_SECRET_KEY")
-    if not secret_key:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Stripe is not configured. Set STRIPE_SECRET_KEY.")
-
+def _stripe_request(path: str, payload: dict[str, str], secret_key: str, method: str = "POST") -> dict[str, Any]:
     encoded = urlencode(payload).encode("utf-8")
     auth = base64.b64encode(f"{secret_key}:".encode("utf-8")).decode("ascii")
     url = f"https://api.stripe.com{path}"

@@ -186,6 +186,50 @@ export type BillingSummary = {
   }
 }
 
+export type IntegrationSecretField = {
+  key: string
+  label: string
+  configured: boolean
+  masked?: string | null
+  source: "workspace" | "environment" | "missing" | string
+}
+
+export type IntegrationConfigField = {
+  key: string
+  label: string
+}
+
+export type IntegrationProviderSettings = {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+  configured: boolean
+  config: Record<string, string>
+  secretFields: IntegrationSecretField[]
+  configFields: IntegrationConfigField[]
+  updatedAt?: string | null
+}
+
+export type WorkspaceSettings = {
+  workspaceId: string
+  providers: IntegrationProviderSettings[]
+}
+
+export type ProviderSettingsPayload = {
+  workspaceId: string
+  provider: string
+  enabled?: boolean
+  config?: Record<string, string>
+  secrets?: Record<string, string>
+}
+
+export type ProviderSettingsTestResult = {
+  provider: string
+  ok: boolean
+  message: string
+}
+
 async function parseApiError(response: Response): Promise<string> {
   try {
     const payload = await response.json()
@@ -231,6 +275,29 @@ async function postWithAuth<T>(path: string, body: Record<string, unknown> = {})
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (!response.ok) {
+    throw new Error(await parseApiError(response))
+  }
+
+  return response.json()
+}
+
+async function putWithAuth<T>(path: string, body: Record<string, unknown> = {}): Promise<T> {
+  const token = window.localStorage.getItem("forge_ai_token")
+  if (!token) {
+    throw new Error("You need to log in first.")
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "PUT",
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
@@ -518,6 +585,18 @@ export function createBillingCheckout(payload: { workspaceId: string; plan: stri
 
 export function createBillingPortal(payload: { workspaceId: string }): Promise<{ url: string }> {
   return postWithAuth<{ url: string }>("/api/billing/portal", payload)
+}
+
+export function fetchWorkspaceSettings(workspaceId: string): Promise<WorkspaceSettings> {
+  return getWithAuth<WorkspaceSettings>(`/api/settings?workspaceId=${encodeURIComponent(workspaceId)}`)
+}
+
+export function saveProviderSettings(payload: ProviderSettingsPayload): Promise<IntegrationProviderSettings> {
+  return putWithAuth<IntegrationProviderSettings>("/api/settings/provider", payload)
+}
+
+export function testProviderSettings(payload: ProviderSettingsPayload): Promise<ProviderSettingsTestResult> {
+  return postWithAuth<ProviderSettingsTestResult>("/api/settings/provider/test", payload)
 }
 
 export async function logoutUser(): Promise<void> {
