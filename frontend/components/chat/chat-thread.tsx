@@ -5,9 +5,9 @@ import { Loader2, MessageSquareText, Rocket } from "lucide-react"
 import { UserMessage, AgentMessage, SystemCardSlot } from "./messages"
 import { Composer } from "./composer"
 import { DecomposerCard, type DecomposerCardData } from "@/components/cards/decomposer-card"
+import { DataSourceCard } from "@/components/cards/data-source-card"
 import { DataUploadCard } from "@/components/cards/data-upload-card"
 import {
-  fetchUseCases,
   getConversationState,
   persistStrategyUseCases,
   respondToInterrupt,
@@ -18,7 +18,6 @@ import {
   type ConversationStreamTokenMeta,
   type PersistStrategyUseCase,
   type Project,
-  type UseCaseRecord,
   type Workspace,
 } from "@/lib/api"
 import type { ConversationMessage, ConversationSession } from "@/lib/types"
@@ -72,12 +71,16 @@ function buildSessionCandidates({
 }
 
 function messageKey(message: ConversationMessage): string {
+  const normalizedContent = message.content.trim().replace(/\s+/g, " ").toLowerCase()
+
+  if (message.role === "user") {
+    return ["user", normalizedContent].join("::")
+  }
+
   return [
     message.role,
     message.agentName ?? "",
-    message.timestamp ?? "",
-    message.cardType ?? "",
-    message.content,
+    normalizedContent,
   ].join("::")
 }
 
@@ -85,13 +88,21 @@ function mergeMessages(
   existing: ConversationMessage[] = [],
   incoming: ConversationMessage[] = [],
 ): ConversationMessage[] {
-  const seen = new Set<string>()
   const merged: ConversationMessage[] = []
 
   for (const message of [...existing, ...incoming]) {
     const key = messageKey(message)
-    if (seen.has(key)) continue
-    seen.add(key)
+    const existingIndex = merged.findIndex((item) => messageKey(item) === key)
+    if (existingIndex >= 0) {
+      const current = merged[existingIndex]
+      const incomingHasMoreData =
+        Boolean(message.cardData && !current.cardData) ||
+        Boolean(message.cardType && !current.cardType)
+      if (incomingHasMoreData) {
+        merged[existingIndex] = message
+      }
+      continue
+    }
     merged.push(message)
   }
 
@@ -185,7 +196,6 @@ export function ChatThread({
   selectedWorkspace: Workspace | null
   selectedProject: Project | null
 }) {
-  const [useCases, setUseCases] = useState<UseCaseRecord[]>([])
   const [confirmedStrategy, setConfirmedStrategy] = useState<DecomposerCardData | null>(null)
   const [strategyConfirmed, setStrategyConfirmed] = useState(false)
 
@@ -201,19 +211,7 @@ export function ChatThread({
 
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (!selectedWorkspace || !selectedProject) {
-      setUseCases([])
-      return
-    }
-    fetchUseCases(selectedWorkspace.id, selectedProject.id)
-      .then(setUseCases)
-      .catch(() => setUseCases([]))
-  }, [selectedWorkspace?.id, selectedProject?.id])
-
-  const selectedUseCase = useCases[0] ?? null
-
-  // Build deterministic session ID on every workspace/use-case change.
+  // Build deterministic session ID on every workspace/project change.
   // This is the persistence key used by the conversational service checkpoint.
   useEffect(() => {
     if (!selectedWorkspace || !selectedProject) {
@@ -232,7 +230,6 @@ export function ChatThread({
       userId,
       workspaceId: wsId,
       projectId: selectedProject.id,
-      useCaseId: selectedUseCase?.id,
     })
     const primarySessionId = candidates[0]
 
@@ -280,7 +277,7 @@ export function ChatThread({
     return () => {
       cancelled = true
     }
-  }, [selectedWorkspace?.id, selectedProject?.id, selectedUseCase?.id])
+  }, [selectedWorkspace?.id, selectedProject?.id])
 
   useEffect(() => {
     if (!session) return
@@ -335,7 +332,7 @@ export function ChatThread({
     }
     setSession((prev: ConversationSession | null) =>
       prev
-        ? { ...prev, messages: [...prev.messages, userMsg], interrupt: null }
+        ? { ...prev, messages: mergeMessages(prev.messages, [userMsg]) }
         : { sessionId: sessionId!, status: "intake", messages: [userMsg], interrupt: null },
     )
     setConvStarted(true)
@@ -427,9 +424,6 @@ export function ChatThread({
               projectId: selectedProject.id,
               useCases: useCasesToPersist,
             })
-            fetchUseCases(selectedWorkspace.id, selectedProject.id)
-              .then(setUseCases)
-              .catch(() => undefined)
           } catch (err) {
             setConvError(
               err instanceof Error
@@ -519,9 +513,8 @@ export function ChatThread({
 
   const isComplete = session?.status === "complete"
   const userName = getStoredUserName()
-  const heroTitle = selectedUseCase?.name || selectedProject.name
+  const heroTitle = selectedProject.name
   const heroDescription =
-    selectedUseCase?.description ||
     selectedProject.description ||
     `${selectedWorkspace.name} brings data sourcing, model search, retrieval, approvals, and deployment into one guided AI product workflow.`
 
@@ -553,7 +546,6 @@ export function ChatThread({
 
           <div className="app-control mx-auto rounded-full px-4 py-1.5 text-[11px] font-semibold text-muted-foreground">
             {selectedWorkspace.name} / {selectedProject.name}
-            {selectedUseCase ? ` / ${selectedUseCase.name}` : ""}
           </div>
 
           {/* ----------------------------------------------------------------
@@ -601,7 +593,7 @@ export function ChatThread({
           )}
 
           {/* Pending interrupt — renders specialised cards or falls back to text bubble */}
-          {convStarted && !convLoading && session?.interrupt && (() => {
+          {convStarted && session?.interrupt && (() => {
             const { type, message, questions, data, problemId, problemName, engine } = session.interrupt
 
             if (type === "sub_problem_confirmation") {
@@ -620,13 +612,10 @@ export function ChatThread({
             if (type === "dataset_source_choice") {
               return (
                 <SystemCardSlot>
-                  <DataUploadCard
-                    problemId={problemId ?? ""}
-                    problemName={problemName ?? "Dataset"}
-                    engine={(engine as "autogluon" | "autorag") ?? "autogluon"}
+                  <DataSourceCard
                     onUploadFile={(file) => handleChoiceAndUpload(file, problemId ?? "")}
                     onDiscover={() => handleInterruptAction({ choice: "discover" })}
-                    onSkip={() => handleInterruptAction({ choice: "skip" })}
+                    onEnrich={() => handleInterruptAction({ choice: "discover" })}
                     loading={convLoading}
                   />
                 </SystemCardSlot>

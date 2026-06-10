@@ -387,6 +387,12 @@ async def _stream_graph_run(
                         if not isinstance(msg, dict) or msg.get("role") != "agent":
                             continue
                         if msg.get("card_type") == "strategy":
+                            chat_message = {
+                                **msg,
+                                "card_type": None,
+                                "card_data": None,
+                            }
+                            await _enqueue_tokenized_message(queue, chat_message, node_name)
                             await queue.put({
                                 "type": "progress",
                                 "phase": "strategy",
