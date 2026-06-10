@@ -128,6 +128,7 @@ def _load_env_files() -> None:
     for path in _candidate_env_paths():
         if path.exists():
             _load_env_file(path)
+    _alias_redis_env()
     _alias_vectorforge_openai_env()
 
 
@@ -138,6 +139,7 @@ def _candidate_env_paths() -> list[Path]:
         Path.cwd() / ".env",
         app_root / ".env",
         package_root / ".env",
+        app_root.parent / "conversational" / ".env",
         app_root.parent / ".env",
         app_root.parent.parent / ".env",
     ]
@@ -164,6 +166,18 @@ def _alias_vectorforge_openai_env() -> None:
         os.environ["OPENAI_API_KEY"] = os.environ["VECTORFORGE_OPENAI_API_KEY"]
     if not os.environ.get("OPENAI_ADMIN_KEY") and os.environ.get("VECTORFORGE_OPENAI_ADMIN_KEY"):
         os.environ["OPENAI_ADMIN_KEY"] = os.environ["VECTORFORGE_OPENAI_ADMIN_KEY"]
+
+
+def _alias_redis_env() -> None:
+    redis_url = (
+        os.environ.get("VECTORFORGE_REDIS_URL")
+        or os.environ.get("VECTORFORGE_ELASTICACHE_REDIS_URL")
+        or os.environ.get("ELASTICACHE_REDIS_URL")
+        or os.environ.get("REDIS_URL")
+    )
+    if redis_url:
+        os.environ.setdefault("VECTORFORGE_REDIS_URL", redis_url)
+        os.environ.setdefault("REDIS_URL", redis_url)
 
 
 def _redis_key(name: str) -> str:
@@ -1055,6 +1069,7 @@ async def trigger_orchestrator_from_session(
     """
     from vectorforge_v1.orchestrator.redis_store import get_session_output
 
+    _load_env_files()
     try:
         request = await get_session_output(session_id)
     except ValueError as exc:

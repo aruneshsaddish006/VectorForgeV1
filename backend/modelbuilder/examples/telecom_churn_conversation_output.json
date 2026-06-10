@@ -1,0 +1,38 @@
+{
+  "business_problem": "Build a telecom churn prediction model that identifies customers likely to churn so retention teams can prioritize proactive outreach.",
+  "domain": "telecom",
+  "constraint_summary": "A churn modeling CSV is available in S3. The target column is churn. No GenAI/RAG workload is requested for this run.",
+  "ml_problems": [
+    {
+      "id": "prob_1",
+      "name": "Telecom Churn Prediction",
+      "description": "Predict whether a telecom customer will churn using the uploaded churn dataset.",
+      "category": "traditional",
+      "engine": "autogluon",
+      "autogluon_task_type": "binary_classification",
+      "hypothesis_evidence": [
+        "The dataset is explicitly prepared for telecom churn prediction.",
+        "The target column is churn, making this a binary classification problem."
+      ],
+      "business_kpis": [
+        "Identify high-risk churn customers for retention outreach",
+        "Improve retention campaign targeting precision"
+      ],
+      "dataset": {
+        "description": "Telecom churn prediction CSV dataset.",
+        "target_column": {
+          "inferred_name": "churn",
+          "type": "binary",
+          "reason": "The user specified churn as the prediction target."
+        },
+        "source": {
+          "s3_path": "https://vector-forge-s3.s3.us-west-2.amazonaws.com/datasets/enriched_telecom_churn-2.csv"
+        }
+      }
+    }
+  ],
+  "session_cost_usd": 0.0,
+  "ready_for_experiments": true,
+  "max_experiment_per_round": 2,
+  "num_round": 2
+}
