@@ -1,11 +1,12 @@
 """LangGraph StateGraph assembly for the VectorForge conversational workflow.
 
 Node execution order:
-  START → intake → decomposer → dataset_sourcing ↩ (loop per sub-problem)
-                                                  → output_compiler → END
+  START → intake → discovery → decomposer → dataset_sourcing ↩ (loop per sub-problem)
+                                                              → output_compiler → END
 
 Conditional routing is driven by state.status:
   "intake"           → intake
+  "discovering"      → discovery
   "decomposing"      → decomposer
   "dataset_sourcing" → dataset_sourcing
   "compiling_output" → output_compiler
@@ -23,6 +24,7 @@ from langgraph.graph import END, START, StateGraph
 
 from conversational.graph.nodes.dataset_sourcing import dataset_sourcing_node
 from conversational.graph.nodes.decomposer import decomposer_node
+from conversational.graph.nodes.discovery import discovery_node
 from conversational.graph.nodes.intake import intake_node
 from conversational.graph.nodes.output_compiler import output_compiler_node
 from conversational.graph.state import ConversationalState
@@ -32,6 +34,7 @@ def _route(state: ConversationalState) -> str:
     status = state.get("status", "intake")
     routes = {
         "intake": "intake",
+        "discovering": "discovery",
         "decomposing": "decomposer",
         "dataset_sourcing": "dataset_sourcing",
         "compiling_output": "output_compiler",
@@ -54,6 +57,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     builder = StateGraph(ConversationalState)
 
     builder.add_node("intake", intake_node)
+    builder.add_node("discovery", discovery_node)
     builder.add_node("decomposer", decomposer_node)
     builder.add_node("dataset_sourcing", dataset_sourcing_node)
     builder.add_node("output_compiler", output_compiler_node)
@@ -61,6 +65,7 @@ def build_graph(checkpointer: BaseCheckpointSaver | None = None):
     builder.add_conditional_edges(START, _route)
 
     builder.add_conditional_edges("intake", _route)
+    builder.add_conditional_edges("discovery", _route)
     builder.add_conditional_edges("decomposer", _route)
     builder.add_conditional_edges("dataset_sourcing", _route)
     builder.add_conditional_edges("output_compiler", _route)

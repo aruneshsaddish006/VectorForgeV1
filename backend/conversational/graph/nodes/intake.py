@@ -99,11 +99,11 @@ async def intake_node(state: ConversationalState) -> dict:
     # Do NOT re-run the LLM — it will ask more questions and break the flow.
     if rounds >= MAX_CLARIFICATION_ROUNDS:
         return {
-            "status": "decomposing",
+            "status": "discovering",
             "clarification_questions_asked": rounds,
             "messages": [
                 agent_message(
-                    content="Got it — analysing your problem now.",
+                    content="Got it — researching your industry now.",
                     agent_name="Intent Agent",
                 )
             ],
@@ -129,12 +129,12 @@ async def intake_node(state: ConversationalState) -> dict:
         if result.get(field):
             state_update[field] = result[field]
 
-    # If LLM already has enough context, skip straight to decomposing
+    # If LLM already has enough context, advance to discovery
     if result["is_sufficient"]:
-        state_update["status"] = "decomposing"
+        state_update["status"] = "discovering"
         state_update["messages"] = [
             agent_message(
-                content=result.get("agent_summary", "Got it. Analysing your problem now."),
+                content=result.get("agent_summary", "Got it. Researching your industry now."),
                 agent_name="Intent Agent",
                 card_type="intake_summary",
                 card_data={

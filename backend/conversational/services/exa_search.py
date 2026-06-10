@@ -9,11 +9,14 @@ Env vars (loaded from .env via config.get_settings()):
 
 from __future__ import annotations
 
+import logging
 from urllib.parse import urlparse
 
 import httpx
 
 from conversational.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 _EXA_SEARCH_URL = "https://api.exa.ai/search"
 
@@ -70,6 +73,8 @@ async def search_datasets(
     domain_clause = " OR ".join(f"site:{d}" for d in _DATASET_DOMAINS)
     full_query = f"{query} dataset CSV ({domain_clause})"
 
+    logger.info("Exa search | query=%r num_results=%d", full_query, num_results)
+
     headers = {
         "x-api-key": settings.exa_api_key,
         "Content-Type": "application/json",
@@ -79,26 +84,34 @@ async def search_datasets(
         "num_results": num_results,
         "use_autoprompt": True,
         "type": "neural",
+        "contents": {"text": {"maxCharacters": 500}},
     }
 
     async with httpx.AsyncClient(timeout=30, verify=settings.llm_ssl_verify) as client:
         resp = await client.post(_EXA_SEARCH_URL, json=payload, headers=headers)
+        logger.info("Exa response | status=%d body_size=%d", resp.status_code, len(resp.content))
         resp.raise_for_status()
         data = resp.json()
 
+    raw_results = data.get("results", [])
+    logger.info("Exa returned %d raw results", len(raw_results))
+
     results = []
-    for item in data.get("results", []):
+    for item in raw_results:
         url: str = item.get("url", "")
+        description = (item.get("text") or item.get("snippet") or item.get("summary") or "")[:500]
+        logger.debug("Exa result | title=%r url=%s description_len=%d", item.get("title"), url, len(description))
         results.append(
             {
                 "title": item.get("title", "Untitled dataset"),
                 "url": url,
-                "description": (item.get("text") or item.get("snippet", ""))[:500],
+                "description": description,
                 "domain": _extract_domain(url),
                 "estimated_cost_usd": 0.0,
             }
         )
 
+    logger.info("Exa search complete | %d usable results", len(results))
     return results
 
 
@@ -147,6 +160,68 @@ async def search_use_case_benchmarks(
         for item in data.get("results", [])
         if item.get("url")
     ]
+
+
+async def search_industry_discovery(
+    business_problem: str,
+    domain: str,
+    num_results: int = 4,
+) -> list[dict]:
+    """Search for revenue impact, AI adoption trends, and workflow optimization stats.
+
+    Runs three targeted Exa queries and aggregates results.
+    Returns an empty list when EXA_API_KEY is missing or all requests fail.
+    """
+    settings = get_settings()
+    if not settings.exa_api_key:
+        return []
+
+    queries = [
+        f"{domain} {business_problem} revenue impact cost savings statistics 2024 2025",
+        f"{domain} industry AI machine learning ROI adoption benchmark report",
+        f"{business_problem} workflow automation optimization improvement percentage",
+    ]
+
+    headers = {
+        "x-api-key": settings.exa_api_key,
+        "Content-Type": "application/json",
+    }
+
+    all_results: list[dict] = []
+    try:
+        async with httpx.AsyncClient(timeout=20, verify=settings.llm_ssl_verify) as client:
+            for query in queries:
+                payload = {
+                    "query": query,
+                    "num_results": num_results,
+                    "use_autoprompt": True,
+                    "type": "neural",
+                    "contents": {"text": {"maxCharacters": 600}},
+                }
+                try:
+                    resp = await client.post(_EXA_SEARCH_URL, json=payload, headers=headers)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        for item in data.get("results", []):
+                            if item.get("url"):
+                                all_results.append(
+                                    {
+                                        "title": item.get("title", ""),
+                                        "url": item.get("url", ""),
+                                        "snippet": (item.get("text") or "")[:600],
+                                        "query_context": query,
+                                    }
+                                )
+                except Exception:
+                    continue
+    except Exception:
+        pass
+
+    logger.info(
+        "Exa industry discovery | domain=%r problem=%r results=%d",
+        domain, business_problem, len(all_results),
+    )
+    return all_results
 
 
 async def estimate_build_cost() -> float:

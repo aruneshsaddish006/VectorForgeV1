@@ -151,10 +151,16 @@ async def dataset_sourcing_node(state: ConversationalState) -> dict:
         required_cols = [v.get("inferred_name", k) for k, v in inferred_columns.items() if v]
         query = build_dataset_search_query(prob_name, dataset_description, required_cols)
 
+        logger.info("Discover phase | prob=%r query=%r required_cols=%s", prob_name, query, required_cols)
+
+        exa_error: str | None = None
         try:
             results = await search_datasets(query, num_results=5)
-        except Exception:
+            logger.info("Discover phase | Exa returned %d results for prob=%r", len(results), prob_name)
+        except Exception as exc:
+            logger.error("Discover phase | Exa search failed for prob=%r: %s", prob_name, exc, exc_info=True)
             results = []
+            exa_error = str(exc)
 
         pick_resume = interrupt(
             {
@@ -163,6 +169,7 @@ async def dataset_sourcing_node(state: ConversationalState) -> dict:
                 "problem_name": prob_name,
                 "search_query": query,
                 "results": results,
+                "exa_error": exa_error,
                 "message": (
                     f"I found {len(results)} public datasets for **{prob_name}**. "
                     "Select one by index or provide a custom URL."
@@ -172,6 +179,7 @@ async def dataset_sourcing_node(state: ConversationalState) -> dict:
                         "label": r["title"],
                         "url": r["url"],
                         "domain": r.get("domain", ""),
+                        "description": r.get("description", ""),
                         "index": i,
                     }
                     for i, r in enumerate(results)
@@ -179,16 +187,21 @@ async def dataset_sourcing_node(state: ConversationalState) -> dict:
             }
         )
 
+        logger.info("Discover phase | pick_resume=%r", pick_resume)
+
         selected_index = (pick_resume or {}).get("selected_index")
         custom_url = (pick_resume or {}).get("custom_url")
 
         if custom_url:
             dataset_url = custom_url
+            logger.info("Discover phase | user provided custom URL: %s", dataset_url)
         elif selected_index is not None and results:
             chosen = results[int(selected_index)] if 0 <= int(selected_index) < len(results) else results[0]
             dataset_url = chosen["url"]
+            logger.info("Discover phase | user selected index=%s url=%s", selected_index, dataset_url)
         else:
             dataset_url = ""
+            logger.warning("Discover phase | no selection made for prob=%r, proceeding with empty URL", prob_name)
 
         return {
             "status": "dataset_sourcing",
