@@ -327,15 +327,34 @@ async def upload_dataset_endpoint(
 
     logger.info("S3 upload done | s3_path=%s", s3_path)
 
+    # Parse actual column names from the CSV so the schema confirmation card
+    # can show real column names instead of LLM-guessed ones.
+    actual_columns: list[str] = []
+    if ext == ".csv":
+        import csv as _csv
+        import io as _io
+        try:
+            text = file_data.decode("utf-8-sig", errors="ignore")  # strip BOM if present
+            reader = _csv.reader(_io.StringIO(text))
+            actual_columns = next(reader, [])
+            logger.info("Parsed %d CSV columns: %s", len(actual_columns), actual_columns)
+        except Exception as exc:
+            logger.warning("Could not parse CSV columns: %s", exc)
+
     # If the graph is still at the choice interrupt, advance it to awaiting_upload
     # before sending the s3_path.
     if current_type == InterruptType.DATASET_SOURCE_CHOICE.value:
         logger.info("Advancing graph from dataset_source_choice → awaiting_upload")
         await graph.ainvoke(Command(resume={"choice": "upload"}), config=config)
 
-    logger.info("Resuming graph with s3_path | prob_id=%s", problem_id)
+    logger.info("Resuming graph with s3_path | prob_id=%s columns=%d", problem_id, len(actual_columns))
     await graph.ainvoke(
-        Command(resume={"s3_path": s3_path, "prob_id": problem_id, "filename": filename}),
+        Command(resume={
+            "s3_path": s3_path,
+            "prob_id": problem_id,
+            "filename": filename,
+            "actual_columns": actual_columns,
+        }),
         config=config,
     )
     logger.info("Graph resumed successfully | session=%s", session_id)

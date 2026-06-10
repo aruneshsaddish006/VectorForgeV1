@@ -136,10 +136,12 @@ async def dataset_sourcing_node(state: ConversationalState) -> dict:
             }
         )
         s3_path = (upload_resume or {}).get("s3_path", "")
+        actual_columns = (upload_resume or {}).get("actual_columns", [])
         return {
             "status": "dataset_sourcing",
             "dataset_phase": "schema",
             "dataset_pending_s3_path": s3_path,
+            "dataset_actual_columns": actual_columns,
         }
 
     # ------------------------------------------------------------------ #
@@ -199,17 +201,21 @@ async def dataset_sourcing_node(state: ConversationalState) -> dict:
     # ------------------------------------------------------------------ #
     if phase == "schema":
         s3_path = state.get("dataset_pending_s3_path", "")
+        actual_columns: list = state.get("dataset_actual_columns", [])
         is_uploaded = s3_path.startswith("s3://")
 
         logger.info(
-            "Schema preview phase | prob=%r s3_path=%s is_uploaded=%s",
-            prob_name, s3_path, is_uploaded,
+            "Schema preview phase | prob=%r s3_path=%s is_uploaded=%s actual_columns=%s",
+            prob_name, s3_path, is_uploaded, actual_columns,
         )
         if is_uploaded:
             logger.info("[DATASET] S3 path for %r → %s", prob_name, s3_path)
             print(f"[DATASET] {prob_name} → {s3_path}")  # server stdout for quick check
 
         # Always show preview so user can confirm before proceeding.
+        # actual_columns contains the real column names parsed from the uploaded CSV —
+        # the frontend uses these to let the user pick the correct target column
+        # instead of blindly trusting the LLM-inferred name.
         schema_resume = interrupt(
             {
                 "type": InterruptType.SCHEMA_CONFIRMATION.value,
@@ -218,11 +224,12 @@ async def dataset_sourcing_node(state: ConversationalState) -> dict:
                 "engine": engine,
                 "message": (
                     f"Dataset ready for **{prob_name}**. "
-                    "Review the details below and confirm to continue."
+                    "Review the column mapping below and confirm the target column before continuing."
                 ),
                 "data": {
                     "s3_path": s3_path,
                     "inferred_columns": inferred_columns,
+                    "actual_columns": actual_columns,
                     "dataset_description": dataset_description,
                     "engine": engine,
                     "is_uploaded": is_uploaded,
@@ -283,7 +290,7 @@ def _source_summary(source: dict) -> str:
     stype = source.get("source_type")
     name = source.get("problem_name", "")
     if stype == DatasetSourceType.UPLOAD:
-        return f"Dataset for **{name}** uploaded to S3: `{source.get('s3_path', '')}`."
+        return f"Datasource uploaded for **{name}**."
     if stype == DatasetSourceType.DISCOVER:
         return f"Dataset for **{name}** sourced: {source.get('dataset_url', '')}."
     return f"Dataset for **{name}** marked as pending — will be provided out-of-band."

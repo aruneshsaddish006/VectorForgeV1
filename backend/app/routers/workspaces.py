@@ -52,6 +52,11 @@ def persist_strategy_use_cases(
     return workspace_service.persist_strategy_use_cases(current_user["id"], payload)
 
 
+@router.delete("/workspaces/{workspace_id}", status_code=204)
+def delete_workspace(workspace_id: str, current_user: dict[str, Any] = Depends(get_current_user)) -> None:
+    workspace_service.delete_workspace(current_user["id"], workspace_id)
+
+
 @router.delete("/projects/{project_id}", status_code=204)
 def delete_project(project_id: str, current_user: dict[str, Any] = Depends(get_current_user)) -> None:
     workspace_service.delete_project(current_user["id"], project_id)

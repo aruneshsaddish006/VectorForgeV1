@@ -302,6 +302,30 @@ def persist_strategy_use_cases(user_id: str, payload: PersistStrategyUseCasesReq
         raise db_error(exc) from exc
 
 
+def delete_workspace(user_id: str, workspace_id: str) -> None:
+    try:
+        with connect_db() as connection:
+            with connection.cursor(row_factory=dict_row) as cursor:
+                cursor.execute(
+                    """
+                    SELECT role
+                    FROM workspace_members
+                    WHERE user_id = %s AND organization_id = %s AND role = 'owner'
+                    """,
+                    (user_id, workspace_id),
+                )
+                if not cursor.fetchone():
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Only the workspace owner can delete a workspace.",
+                    )
+                cursor.execute("DELETE FROM organizations WHERE id = %s", (workspace_id,))
+    except HTTPException:
+        raise
+    except psycopg.Error as exc:
+        raise db_error(exc) from exc
+
+
 def delete_project(user_id: str, project_id: str) -> None:
     try:
         with connect_db() as connection:
