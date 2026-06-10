@@ -369,11 +369,22 @@ async def get_final_output(
     final_output = snapshot.values.get("final_output")
     current_status = snapshot.values.get("status", "unknown")
 
+    logger.info(
+        "[get_final_output] session=%s status=%s has_output=%s",
+        session_id, current_status, final_output is not None,
+    )
+
     if not final_output:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Conversation not yet complete. Current status: {current_status}.",
         )
+
+    logger.info(
+        "[get_final_output] writing to Redis | session=%s payload=\n%s",
+        session_id,
+        json.dumps(final_output, indent=2, default=str),
+    )
 
     # Write-through: ensure Redis is populated even if the respond endpoint
     # missed the write (e.g. server restart between confirm and completion).

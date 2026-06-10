@@ -95,13 +95,22 @@ async def write_session_output(session_id: str, output: dict[str, Any]) -> None:
 async def read_session_output(session_id: str) -> dict[str, Any] | None:
     """Read session output from Redis. Returns None if key is absent or Redis is down."""
     settings = get_settings()
+    key = _session_key(session_id)
+    logger.info("[read_session_output] fetching key=%s", key)
     try:
         client = _make_client(settings.redis_url)
         async with client:
-            raw = await client.get(_session_key(session_id))
+            raw = await client.get(key)
         if raw is None:
+            logger.info("[read_session_output] key=%s not found in Redis", key)
             return None
-        return json.loads(raw)
+        output = json.loads(raw)
+        logger.info(
+            "[read_session_output] key=%s hit | payload=\n%s",
+            key,
+            json.dumps(output, indent=2, default=str),
+        )
+        return output
     except Exception as exc:
-        logger.error("Redis read failed for session=%s: %s", session_id, exc)
+        logger.error("[read_session_output] Redis read failed for session=%s: %s", session_id, exc)
         return None
