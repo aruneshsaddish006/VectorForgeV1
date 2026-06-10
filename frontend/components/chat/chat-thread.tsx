@@ -7,8 +7,6 @@ import { Composer } from "./composer"
 import { DecomposerCard, type DecomposerCardData } from "@/components/cards/decomposer-card"
 import { DataSourceCard } from "@/components/cards/data-source-card"
 import { DataUploadCard } from "@/components/cards/data-upload-card"
-<<<<<<< Updated upstream
-=======
 import { DataPreviewCard } from "@/components/cards/data-preview-card"
 import { UsecasePlanCard, type FinalOutput } from "@/components/cards/usecase-plan-card"
 import { ExaBuilderCard } from "@/components/cards/exa-builder-card"
@@ -17,14 +15,10 @@ import { TrainingCard } from "@/components/cards/training-card"
 import { RagCard } from "@/components/cards/rag-card"
 import { DeploymentCard } from "@/components/cards/deployment-card"
 import { BillingApprovalCard } from "@/components/cards/billing-approval-card"
->>>>>>> Stashed changes
 import {
   getConversationState,
-<<<<<<< Updated upstream
   persistStrategyUseCases,
   respondToInterrupt,
-=======
->>>>>>> Stashed changes
   streamRespondToInterrupt,
   streamStartConversation,
   uploadDataset,
@@ -485,7 +479,6 @@ export function ChatThread({
     }
   }
 
-<<<<<<< Updated upstream
   // Two-step upload: send choice=upload then immediately upload the file
   async function handleChoiceAndUpload(file: File, probId: string) {
     if (!sessionId || convLoading) return
@@ -503,19 +496,6 @@ export function ChatThread({
   }
 
   // ---------------------------------------------------------------------------
-=======
-  function handleClearChat() {
-    const userId = getStoredUserId()
-    const wsId = selectedWorkspace?.id ?? DEFAULT_WORKSPACE_ID
-    const projId = selectedProject?.id ?? DEFAULT_PROJECT_ID
-    setSessionId(`${buildSessionId(userId, wsId, projId)}_${Date.now()}`)
-    setSession(null)
-    setConvStarted(false)
-    setConvError(null)
-  }
-
-  //---------------------------------------------------------------------------
->>>>>>> Stashed changes
   // Empty states — unchanged from original
   // ---------------------------------------------------------------------------
 
@@ -634,19 +614,14 @@ export function ChatThread({
           {convStarted &&
             confirmedStrategy &&
             (strategyConfirmed || session?.interrupt?.type !== "sub_problem_confirmation") && (
-            <SystemCardSlot>
-              <DecomposerCard cardData={confirmedStrategy} confirmed />
-            </SystemCardSlot>
-          )}
+              <SystemCardSlot>
+                <DecomposerCard cardData={confirmedStrategy} confirmed />
+              </SystemCardSlot>
+            )}
 
           {/* Pending interrupt — renders specialised cards or falls back to text bubble */}
-<<<<<<< Updated upstream
-          {convStarted && session?.interrupt && (() => {
-            const { type, message, questions, data, problemId, problemName, engine } = session.interrupt
-=======
           {convStarted && !convLoading && session?.interrupt && (() => {
             const { type, message, questions, data, problemId, problemName, engine, acceptedFormats } = session.interrupt
->>>>>>> Stashed changes
 
             if (type === "sub_problem_confirmation") {
               return (
@@ -665,11 +640,6 @@ export function ChatThread({
               return (
                 <SystemCardSlot>
                   <DataSourceCard
-<<<<<<< Updated upstream
-                    onUploadFile={(file) => handleChoiceAndUpload(file, problemId ?? "")}
-                    onDiscover={() => handleInterruptAction({ choice: "discover" })}
-                    onEnrich={() => handleInterruptAction({ choice: "discover" })}
-=======
                     problemName={problemName ?? undefined}
                     acceptedFormats={acceptedFormats ?? undefined}
                     onSelect={(choice) => {
@@ -708,7 +678,6 @@ export function ChatThread({
                     finalOutput={(session.interrupt?.finalOutput ?? null) as FinalOutput | null}
                     onConfirm={() => handleInterruptAction({ confirmed: true })}
                     onRegenerate={() => handleInterruptAction({ regenerate: true })}
->>>>>>> Stashed changes
                     loading={convLoading}
                   />
                 </SystemCardSlot>
