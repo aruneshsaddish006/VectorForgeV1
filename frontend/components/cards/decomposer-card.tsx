@@ -29,6 +29,16 @@ export type DecomposerCardData = {
   constraint_summary?: { narrative?: string }
 }
 
+/** Extract a compact numeric signal from an ROI narrative (e.g. "70%"). */
+function roiSummary(roi?: string): string {
+  if (!roi) return "—"
+  const pct = roi.match(/(\d+)\s*%/)
+  if (pct) return `${pct[1]}%`
+  const hrs = roi.match(/([\d.]+\s*[–-]\s*[\d.]+)\s*h/)
+  if (hrs) return `${hrs[1]}h`
+  return "Estimated"
+}
+
 function taskTypeLabel(p: MlProblem): string {
   const t = p.autogluon_task_type ?? p.autorag_task_type ?? ""
   if (t.includes("classification")) return "Classification"
@@ -52,7 +62,7 @@ export function DecomposerCard({
   loading?: boolean
 }) {
   const { ml_problems = [], use_cases_mapped, projected_roi, exa_insights = {} } = cardData
-  const roiDisplay = projected_roi ? projected_roi.slice(0, 24) : "—"
+  const roiDisplay = roiSummary(projected_roi)
 
   return (
     <AgentCard
@@ -79,7 +89,7 @@ export function DecomposerCard({
             <tr>
               <th className="px-3 py-2 font-medium">Use Case</th>
               <th className="px-3 py-2 font-medium">Task Type</th>
-              <th className="hidden px-3 py-2 font-medium sm:table-cell">Projected ROI</th>
+              <th className="hidden px-3 py-2 font-medium sm:table-cell">Business KPIs</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">

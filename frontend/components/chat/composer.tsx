@@ -35,9 +35,16 @@ export function Composer({
   const [value, setValue] = React.useState("")
   const [pendingFile, setPendingFile] = React.useState<File | null>(null)
   const fileRef = React.useRef<HTMLInputElement>(null)
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null)
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  React.useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = "auto"
+    el.style.height = `${el.scrollHeight}px`
+  }, [value])
+
+  function submitMessage() {
     const text = value.trim()
     if (!text || disabled) return
     onSubmit?.(text)
@@ -48,7 +55,7 @@ export function Composer({
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
-      handleSubmit(e as unknown as React.FormEvent)
+      submitMessage()
     }
   }
 
@@ -99,7 +106,7 @@ export function Composer({
         )}
 
         <form
-          onSubmit={handleSubmit}
+          onSubmit={(e) => { e.preventDefault(); submitMessage() }}
           className="app-panel-raised flex items-end gap-2 rounded-[22px] p-2 focus-within:border-primary/50"
         >
           <input
@@ -125,6 +132,7 @@ export function Composer({
             Message the AI strategy agent
           </label>
           <textarea
+            ref={textareaRef}
             id="composer"
             rows={1}
             value={value}
@@ -132,7 +140,7 @@ export function Composer({
             onKeyDown={handleKeyDown}
             disabled={disabled}
             placeholder={placeholder}
-            className="max-h-32 min-h-[2.25rem] flex-1 resize-none bg-transparent py-1.5 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"
+            className="max-h-52 min-h-[2.25rem] flex-1 resize-none overflow-y-auto bg-transparent py-1.5 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"
           />
           <Button
             type="submit"

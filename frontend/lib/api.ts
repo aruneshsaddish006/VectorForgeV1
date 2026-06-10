@@ -286,6 +286,16 @@ export function persistStrategyUseCases(payload: {
   return postWithAuth<UseCaseRecord[]>("/api/use-cases/strategy", payload)
 }
 
+export async function deleteWorkspace(workspaceId: string): Promise<void> {
+  const token = window.localStorage.getItem("forge_ai_token")
+  if (!token) throw new Error("You need to log in first.")
+  const response = await fetch(`${API_BASE_URL}/api/workspaces/${encodeURIComponent(workspaceId)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!response.ok) throw new Error(await parseApiError(response))
+}
+
 export async function deleteProject(projectId: string): Promise<void> {
   const token = window.localStorage.getItem("forge_ai_token")
   if (!token) throw new Error("You need to log in first.")
