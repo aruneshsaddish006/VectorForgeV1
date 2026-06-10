@@ -59,6 +59,7 @@ class ConversationalState(TypedDict):
     dataset_sources: Annotated[list[dict], operator.add]
     dataset_phase: str           # tracks current interrupt phase
     dataset_pending_s3_path: str # persists s3_path across node re-runs
+    dataset_actual_columns: list  # actual column names parsed from the uploaded CSV
 
     # -------------------------------------------------------------------
     # Stage 4 — Final output
@@ -99,6 +100,7 @@ def initial_state(session_id: str, first_message: str) -> ConversationalState:
         dataset_sources=[],
         dataset_phase="choice",
         dataset_pending_s3_path="",
+        dataset_actual_columns=[],
         final_output=None,
         session_cost_usd=0.0,
         errors=[],

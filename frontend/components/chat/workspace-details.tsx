@@ -1,10 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { CalendarDays, Database, FolderKanban, Layers3, Plus, RefreshCw, X } from "lucide-react"
+import { CalendarDays, Database, FolderKanban, Layers3, Plus, RefreshCw, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   createWorkspace,
+  deleteWorkspace,
   fetchProjects,
   fetchWorkspaces,
   persistWorkspace,
@@ -22,16 +23,20 @@ export function WorkspaceDetails({
   selectedWorkspace,
   onWorkspaceChange,
   onProjectChange,
+  onWorkspaceDeleted,
 }: {
   selectedWorkspace: Workspace | null
   onWorkspaceChange: (workspace: Workspace) => void
   onProjectChange: (project: Project) => void
+  onWorkspaceDeleted?: (workspaceId: string) => void
 }) {
   const [items, setItems] = React.useState<WorkspaceWithProjects[]>([])
   const [createOpen, setCreateOpen] = React.useState(false)
   const [loading, setLoading] = React.useState(true)
   const [creating, setCreating] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null)
+  const [deleting, setDeleting] = React.useState(false)
 
   const loadWorkspaceDetails = React.useCallback(async () => {
     setLoading(true)
@@ -57,7 +62,7 @@ export function WorkspaceDetails({
     loadWorkspaceDetails()
   }, [loadWorkspaceDetails])
 
-  async function handleCreateWorkspace(event: React.FormEvent<HTMLFormElement>) {
+  async function handleCreateWorkspace(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault()
     setCreating(true)
     setError(null)
@@ -79,12 +84,27 @@ export function WorkspaceDetails({
     }
   }
 
+  async function handleDeleteWorkspace(workspaceId: string) {
+    setDeleting(true)
+    setError(null)
+    try {
+      await deleteWorkspace(workspaceId)
+      setConfirmDeleteId(null)
+      onWorkspaceDeleted?.(workspaceId)
+      await loadWorkspaceDetails()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete workspace.")
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const projectCount = items.reduce((total, item) => total + item.projects.length, 0)
   const activeItem = items.find((item) => item.workspace.id === selectedWorkspace?.id)
 
   return (
     <div className="scroll-thin h-full overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-5xl flex-col gap-6">
+      <div className="flex w-full flex-col gap-6">
         <section className="app-panel-raised rounded-[28px] p-6 sm:p-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -172,6 +192,50 @@ export function WorkspaceDetails({
           </div>
         )}
 
+        {confirmDeleteId && (
+          <div
+            className="fixed inset-0 z-[130] flex items-center justify-center bg-[var(--overlay)] px-4 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="app-panel w-full max-w-sm rounded-[28px] p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="font-heading text-2xl font-bold tracking-tight text-foreground">Delete workspace?</h2>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    This will permanently delete the workspace and all its projects. This action cannot be undone.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteId(null)}
+                  className="rounded-full p-2 text-muted-foreground hover:bg-surface-muted hover:text-foreground"
+                  aria-label="Close dialog"
+                >
+                  <X className="h-5 w-5" aria-hidden="true" />
+                </button>
+              </div>
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteId(null)}
+                  className="app-control inline-flex h-10 items-center justify-center rounded-full px-5 text-sm font-semibold text-foreground"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={() => handleDeleteWorkspace(confirmDeleteId)}
+                  className="app-accent-shadow inline-flex h-10 items-center justify-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {deleting ? "Deleting..." : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <div className="app-panel-raised rounded-[28px] p-6 text-sm text-muted-foreground">
             Loading workspace details...
@@ -255,6 +319,18 @@ export function WorkspaceDetails({
                       ))}
                     </div>
                   )}
+                </div>
+
+                <div className="mt-4 flex justify-end border-t border-border pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteId(workspace.id)}
+                    className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-destructive transition hover:bg-destructive/10"
+                    aria-label={`Delete ${workspace.name}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Delete workspace
+                  </button>
                 </div>
               </article>
             ))}

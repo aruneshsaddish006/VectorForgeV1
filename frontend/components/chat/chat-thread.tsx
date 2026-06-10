@@ -694,7 +694,14 @@ export function ChatThread({
                     s3Path={(preview?.s3_path ?? null) as string | null}
                     datasetDescription={(preview?.dataset_description ?? null) as string | null}
                     inferredColumns={(preview?.inferred_columns ?? null) as Record<string, { inferred_name?: string; type?: string; confidence?: "high" | "medium" | "low" }> | null}
-                    onConfirm={() => handleInterruptAction({ confirmed: true })}
+                    actualColumns={(preview?.actual_columns ?? null) as string[] | null}
+                    onConfirm={(overrides) =>
+                      handleInterruptAction(
+                        overrides && Object.keys(overrides).length > 0
+                          ? { column_overrides: overrides }
+                          : { confirmed: true },
+                      )
+                    }
                     onAdjust={() => handleInterruptAction({ confirmed: false })}
                     loading={convLoading}
                   />

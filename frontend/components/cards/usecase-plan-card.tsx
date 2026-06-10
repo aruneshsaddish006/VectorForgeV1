@@ -116,6 +116,13 @@ function ProblemCard({ problem }: { problem: MLProblem }) {
               )}
             </p>
           )}
+
+          {(problem.business_kpis ?? []).length > 0 && (
+            <p className="mt-1.5 line-clamp-1 text-[11px] text-muted-foreground">
+              <span className="font-medium text-foreground">KPI:</span>{" "}
+              {problem.business_kpis![0]}
+            </p>
+          )}
         </div>
 
         <button
@@ -133,14 +140,14 @@ function ProblemCard({ problem }: { problem: MLProblem }) {
       {expanded && (
         <div className="space-y-3 border-t border-border px-4 pb-4 pt-3">
           {(problem.business_kpis ?? []).length > 0 && (
-            <div>
-              <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                Business KPIs
+            <div className="rounded-lg border border-primary/15 bg-primary/5 px-3 py-2.5">
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-primary/70">
+                Experiment KPIs
               </p>
-              <ul className="space-y-1">
+              <ul className="space-y-1.5">
                 {problem.business_kpis!.map((kpi, i) => (
-                  <li key={i} className="flex items-start gap-1.5 text-xs text-foreground">
-                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" aria-hidden="true" />
+                  <li key={i} className="flex items-start gap-2 text-xs text-foreground">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
                     {kpi}
                   </li>
                 ))}
@@ -236,9 +243,22 @@ export function UsecasePlanCard({
         </div>
 
         {finalOutput?.constraint_summary && (
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            {finalOutput.constraint_summary}
-          </p>
+          <div className="rounded-lg border border-border bg-surface-muted/40 px-3.5 py-3">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Experiment Constraints
+            </p>
+            <ul className="space-y-1.5">
+              {finalOutput.constraint_summary
+                .split(/\.\s+/)
+                .filter((s) => s.trim().length > 15)
+                .map((sentence, i) => (
+                  <li key={i} className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-border" aria-hidden="true" />
+                    {sentence.trim().replace(/\.$/, "")}.
+                  </li>
+                ))}
+            </ul>
+          </div>
         )}
 
         <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">

@@ -76,7 +76,7 @@ export default function DashboardPage() {
           )}
         </main>
 
-        <Inspector open={inspectorOpen} />
+        {activeView !== "workspaces" && <Inspector open={inspectorOpen} />}
       </div>
     </div>
   )

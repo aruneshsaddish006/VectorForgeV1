@@ -50,12 +50,28 @@ async def get_checkpointer() -> AsyncGenerator[AsyncPostgresSaver | MemorySaver,
     # autocommit=True is required — AsyncPostgresSaver.setup() runs
     # CREATE INDEX CONCURRENTLY which cannot execute inside a transaction block.
     # LangGraph manages its own transaction boundaries, so autocommit is safe here.
+    #
+    # keepalives_* prevent AWS RDS from silently dropping idle TCP connections.
+    # max_idle + max_lifetime rotate connections before RDS's idle reaper hits them
+    # so the pool never hands out a dead connection.
     async with AsyncConnectionPool(
         conninfo=settings.postgres_conninfo,
+        min_size=2,
         max_size=10,
-        kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+        max_idle=300,
+        max_lifetime=3600,
+        reconnect_timeout=30,
+        kwargs={
+            "autocommit": True,
+            "prepare_threshold": 0,
+            "row_factory": dict_row,
+            "keepalives": 1,
+            "keepalives_idle": 30,
+            "keepalives_interval": 10,
+            "keepalives_count": 5,
+        },
     ) as pool:
-        checkpointer = AsyncPostgresSaver(pool)
+        checkpointer = AsyncPostgresSaver(pool)  # type: ignore[arg-type]
         await checkpointer.setup()
         yield checkpointer
 
