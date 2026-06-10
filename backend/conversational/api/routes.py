@@ -36,6 +36,9 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, s
 from fastapi.responses import StreamingResponse
 from langgraph.types import Command
 
+import httpx
+
+from conversational.config import get_settings
 from conversational.graph.checkpointer import thread_config
 from conversational.graph.state import initial_state
 from conversational.models.schemas import (
@@ -375,8 +378,24 @@ async def get_final_output(
     # Write-through: ensure Redis is populated even if the respond endpoint
     # missed the write (e.g. server restart between confirm and completion).
     await write_session_output(session_id, final_output)
+    await _trigger_model_builder(session_id)
 
     return {"data": final_output}
+
+
+async def _trigger_model_builder(session_id: str) -> None:
+    """Fire-and-forget POST to the model builder orchestrate endpoint."""
+    url = get_settings().model_builder_url
+    if not url:
+        return
+    target = f"{url.rstrip('/')}/orchestrate/from-session/{session_id}"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(target)
+            resp.raise_for_status()
+            logger.info("Model builder triggered | session=%s orch_id=%s", session_id, resp.json().get("orch_id"))
+    except Exception as exc:
+        logger.warning("Model builder trigger failed | session=%s error=%s", session_id, exc)
 
 
 async def _get_interrupt(graph, config: dict) -> dict | None:
@@ -508,6 +527,7 @@ async def _stream_graph_run(
 
         if state_vals.get("status") == "complete" and final_output:
             await write_session_output(session_id, final_output)
+            await _trigger_model_builder(session_id)
 
         yield _sse({
             "type": "complete",

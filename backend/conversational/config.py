@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     # Default is for local dev; production uses the REDIS_URL value in .env.
     redis_url: str = "redis://localhost:6379"
 
+    # Model Builder service — invoked after session output is written to Redis.
+    # Leave empty to disable the post-completion trigger.
+    model_builder_url: str = ""
+
     # AWS RDS PostgreSQL — LangGraph checkpointing
     # Leave empty to use in-memory checkpointing for local dev/testing
     db_host: str = ""

@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Loader2, MessageSquareText, Rocket } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { Loader2, MessageSquareText, Rocket, PlayCircle } from "lucide-react"
 import { UserMessage, AgentMessage, SystemCardSlot } from "./messages"
 import { Composer } from "./composer"
 import { DecomposerCard, type DecomposerCardData } from "@/components/cards/decomposer-card"
@@ -204,6 +205,7 @@ export function ChatThread({
   selectedWorkspace: Workspace | null
   selectedProject: Project | null
 }) {
+  const router = useRouter()
   const [confirmedStrategy, setConfirmedStrategy] = useState<DecomposerCardData | null>(null)
   const [strategyConfirmed, setStrategyConfirmed] = useState(false)
 
@@ -739,10 +741,29 @@ export function ChatThread({
 
           {/* Completion banner — shown after final_review is confirmed and Redis is written */}
           {isComplete && (
-            <div className="rounded-xl border border-border bg-surface px-4 py-4 text-center text-sm text-foreground">
-              Experiment plan ready — session{" "}
-              <span className="font-mono text-primary">{sessionId}</span> output written to Redis.
-              Orchestrators can now consume it.
+            <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
+              <div className="flex items-start gap-4 px-5 py-4">
+                <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-success-soft text-success">
+                  <PlayCircle className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-foreground">Experiment plan saved to Redis</p>
+                  <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{sessionId}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    All ML problems and dataset sources are confirmed. Trigger the workflow to start training.
+                  </p>
+                </div>
+              </div>
+              <div className="border-t border-border px-5 py-3">
+                <button
+                  type="button"
+                  onClick={() => router.push(`/run-workflow?session=${sessionId}`)}
+                  className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+                >
+                  <PlayCircle className="h-4 w-4" aria-hidden="true" />
+                  Trigger workflow
+                </button>
+              </div>
             </div>
           )}
 
