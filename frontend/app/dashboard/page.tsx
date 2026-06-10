@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Sidebar } from "@/components/shell/sidebar"
 import { TopBar } from "@/components/shell/top-bar"
 import { Inspector } from "@/components/shell/inspector"
+import { BillingDetails } from "@/components/chat/billing-details"
 import { ChatThread } from "@/components/chat/chat-thread"
 import { DatasetDetails } from "@/components/chat/dataset-details"
 import { ModelDetails } from "@/components/chat/model-details"
@@ -71,6 +72,8 @@ export default function DashboardPage() {
             <ModelDetails selectedWorkspace={selectedWorkspace} />
           ) : activeView === "use-cases" ? (
             <UseCaseDetails selectedWorkspace={selectedWorkspace} selectedProject={selectedProject} />
+          ) : activeView === "billing" ? (
+            <BillingDetails selectedWorkspace={selectedWorkspace} />
           ) : (
             <ChatThread selectedWorkspace={selectedWorkspace} selectedProject={selectedProject} />
           )}

@@ -150,6 +150,42 @@ export type ModelRecord = {
   completedAt?: string | null
 }
 
+export type BillingPlan = {
+  id: "free" | "pro" | "enterprise" | string
+  name: string
+  priceMonthly: number
+  summary: string
+  features: string[]
+  limits: Record<string, number | null>
+  checkoutEnabled: boolean
+}
+
+export type BillingUsageItem = {
+  key: string
+  label: string
+  value: number
+  limit: number | null
+  unit: string
+  description: string
+}
+
+export type BillingSummary = {
+  workspaceId: string
+  subscription: {
+    plan: string
+    status: string
+    stripeCustomerId?: string | null
+    stripeSubscriptionId?: string | null
+    currentPeriodStart: string
+    currentPeriodEnd?: string | null
+  }
+  plans: BillingPlan[]
+  usage: {
+    periodSpend: number
+    items: BillingUsageItem[]
+  }
+}
+
 async function parseApiError(response: Response): Promise<string> {
   try {
     const payload = await response.json()
@@ -470,6 +506,18 @@ export function fetchModels(workspaceId: string, projectId?: string): Promise<Mo
   const params = new URLSearchParams({ workspaceId })
   if (projectId) params.set("projectId", projectId)
   return getWithAuth<ModelRecord[]>(`/api/models?${params.toString()}`)
+}
+
+export function fetchBillingSummary(workspaceId: string): Promise<BillingSummary> {
+  return getWithAuth<BillingSummary>(`/api/billing/summary?workspaceId=${encodeURIComponent(workspaceId)}`)
+}
+
+export function createBillingCheckout(payload: { workspaceId: string; plan: string }): Promise<{ url: string }> {
+  return postWithAuth<{ url: string }>("/api/billing/checkout", payload)
+}
+
+export function createBillingPortal(payload: { workspaceId: string }): Promise<{ url: string }> {
+  return postWithAuth<{ url: string }>("/api/billing/portal", payload)
 }
 
 export async function logoutUser(): Promise<void> {
