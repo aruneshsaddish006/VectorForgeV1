@@ -1310,9 +1310,19 @@ def normalize_architecture_plan(plan: dict[str, Any], state: AgentState) -> dict
             }
         )
 
-    if len(architectures) != state["architectures_per_round"]:
+    architecture_limit = max(1, int(state["architectures_per_round"]))
+    if len(architectures) > architecture_limit:
+        architectures = architectures[:architecture_limit]
+    if len(architectures) != architecture_limit:
         return architecture_fallback_plan(state)
     return {**plan, "architectures": architectures}
+
+
+def cap_experiment_plan(state: AgentState) -> AgentState:
+    plan = dict(state.get("experiment_plan") or {})
+    architecture_limit = max(1, int(state.get("architectures_per_round") or DEFAULT_ARCHITECTURES_PER_ROUND))
+    plan["architectures"] = list(plan.get("architectures") or [])[:architecture_limit]
+    return {**state, "experiment_plan": plan}
 
 
 def read_markdown_history(paths: list[str]) -> str:
@@ -1515,6 +1525,7 @@ def build_rag_config(arch: dict[str, Any], project_dir: Path) -> dict[str, Any]:
 
 
 def write_architecture_rationale(state: AgentState) -> AgentState:
+    state = cap_experiment_plan(state)
     work_dir = Path(state["work_dir"]).resolve()
     planning_dir = run_subdirs(work_dir)["planning"]
     planning_dir.mkdir(parents=True, exist_ok=True)
@@ -1770,6 +1781,7 @@ def flatten_metrics(node_summaries: dict[str, list[dict[str, Any]]]) -> dict[str
 
 
 def run_experiment_round(state: AgentState) -> AgentState:
+    state = cap_experiment_plan(state)
     patch_openai_clients_for_local_ssl()
     work_dir = Path(state["work_dir"]).resolve()
     round_dir = run_subdirs(work_dir)["experiments"] / f"round_{state['current_round']}"

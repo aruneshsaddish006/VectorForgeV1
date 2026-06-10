@@ -42,6 +42,7 @@ from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from vectorforge_v1.exp_designer.trad_ml.autogluon.api.config import router as config_router
@@ -102,6 +103,19 @@ def create_app() -> FastAPI:
     )
 
     # ── Existing sub-routers (autogluon designer + artifact-forge) ────────────
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:3001",
+        ],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     application.include_router(config_router)
     application.include_router(workflow_router)
     application.include_router(runs_router)
@@ -118,6 +132,11 @@ app = create_app()
 def _new_orch_id() -> str:
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     return f"orch_{ts}_{uuid.uuid4().hex[:8]}"
+
+
+def _new_orchestrator_run_id() -> str:
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    return f"run_{ts}_{uuid.uuid4().hex[:8]}"
 
 
 def _utc_now() -> str:
@@ -445,9 +464,13 @@ def _orchestrator_run_for_session(session_id: str) -> dict[str, Any] | None:
         candidate_orch_ids.append(str(meta["orch_id"]))
 
     with _ORCH_LOCK:
-        for orch_id, run in _ORCH_RUNS.items():
-            if run.get("session_id") == session_id:
-                return dict(run)
+        matching_runs = [
+            dict(run)
+            for run in _ORCH_RUNS.values()
+            if run.get("session_id") == session_id
+        ]
+    if matching_runs:
+        return max(matching_runs, key=lambda run: str(run.get("started_at") or ""))
 
     for orch_id in dict.fromkeys(candidate_orch_ids):
         with _ORCH_LOCK:
@@ -995,8 +1018,11 @@ def _run_orchestrator_background(orch_id: str, request: dict[str, Any]) -> None:
     from vectorforge_v1.orchestrator.runner import run_orchestrator
 
     session_id = str(request.get("session_id") or request.get("sessionId") or request.get("id") or orch_id)
+    run_id = str(request.get("_vectorforge_run_id") or _new_orchestrator_run_id())
+    request["_vectorforge_run_id"] = run_id
     with _ORCH_LOCK:
         _ORCH_RUNS[orch_id]["status"] = "running"
+        _ORCH_RUNS[orch_id]["run_id"] = run_id
     _write_session_meta(session_id, {"orch_id": orch_id, "status": "running"})
 
     try:
@@ -1070,10 +1096,13 @@ def trigger_orchestrator(
     """
     orch_id = _new_orch_id()
     session_id = str(request.get("session_id") or request.get("sessionId") or request.get("id") or orch_id)
+    run_id = _new_orchestrator_run_id()
     request["session_id"] = session_id
+    request["_vectorforge_run_id"] = run_id
     with _ORCH_LOCK:
         _ORCH_RUNS[orch_id] = {
             "orch_id": orch_id,
+            "run_id": run_id,
             "status": "queued",
             "started_at": _utc_now(),
             "session_id": session_id,
@@ -1085,6 +1114,7 @@ def trigger_orchestrator(
 
     return {
         "orch_id": orch_id,
+        "run_id": run_id,
         "session_id": session_id,
         "status": "queued",
         "poll_url": f"/orchestrate/{orch_id}",
@@ -1127,9 +1157,12 @@ async def trigger_orchestrator_from_session(
     request["session_id"] = session_id
 
     orch_id = _new_orch_id()
+    run_id = _new_orchestrator_run_id()
+    request["_vectorforge_run_id"] = run_id
     with _ORCH_LOCK:
         _ORCH_RUNS[orch_id] = {
             "orch_id": orch_id,
+            "run_id": run_id,
             "status": "queued",
             "started_at": _utc_now(),
             "session_id": session_id,
@@ -1141,6 +1174,7 @@ async def trigger_orchestrator_from_session(
 
     return {
         "orch_id": orch_id,
+        "run_id": run_id,
         "session_id": session_id,
         "status": "queued",
         "poll_url": f"/orchestrate/{orch_id}",
