@@ -3,7 +3,6 @@
 import { useState } from "react"
 import { Sidebar } from "@/components/shell/sidebar"
 import { TopBar } from "@/components/shell/top-bar"
-import { Inspector } from "@/components/shell/inspector"
 import { ChatThread } from "@/components/chat/chat-thread"
 import { DatasetDetails } from "@/components/chat/dataset-details"
 import { ModelDetails } from "@/components/chat/model-details"
@@ -13,7 +12,6 @@ import { WorkspaceDetails } from "@/components/chat/workspace-details"
 import { persistProject, persistWorkspace, type Project, type Workspace } from "@/lib/api"
 
 export default function DashboardPage() {
-  const [inspectorOpen, setInspectorOpen] = useState(true)
   const [selectedWorkspace, setSelectedWorkspace] = useState<Workspace | null>(null)
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [activeView, setActiveView] = useState("chat")
@@ -38,8 +36,6 @@ export default function DashboardPage() {
       <TopBar
         selectedWorkspace={selectedWorkspace}
         selectedProject={selectedProject}
-        inspectorOpen={inspectorOpen}
-        onToggleInspector={() => setInspectorOpen((v) => !v)}
       />
 
       <div className="mt-3 flex min-h-0 flex-1 gap-3 sm:mt-4 sm:gap-4">
@@ -75,8 +71,6 @@ export default function DashboardPage() {
             <ChatThread selectedWorkspace={selectedWorkspace} selectedProject={selectedProject} />
           )}
         </main>
-
-        {activeView !== "workspaces" && <Inspector open={inspectorOpen} />}
       </div>
     </div>
   )

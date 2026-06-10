@@ -4,8 +4,6 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   ChevronRight,
-  PanelRightOpen,
-  PanelRightClose,
   Search,
   Bell,
   HelpCircle,
@@ -15,7 +13,6 @@ import {
 } from "lucide-react"
 import { ForgeAiIcon } from "@/components/brand/forge-ai-icon"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
 import { logoutUser, type Project, type Workspace } from "@/lib/api"
 
 type Theme = "light" | "dark"
@@ -32,13 +29,9 @@ function getInitialTheme(): Theme {
 export function TopBar({
   selectedWorkspace,
   selectedProject,
-  inspectorOpen,
-  onToggleInspector,
 }: {
   selectedWorkspace: Workspace | null
   selectedProject: Project | null
-  inspectorOpen: boolean
-  onToggleInspector: () => void
 }) {
   const router = useRouter()
   const [theme, setTheme] = useState<Theme | null>(null)
@@ -143,20 +136,6 @@ export function TopBar({
             <Sun className="h-5 w-5" aria-hidden="true" />
           ) : (
             <Moon className="h-5 w-5" aria-hidden="true" />
-          )}
-        </Button>
-
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onToggleInspector}
-          aria-label={inspectorOpen ? "Hide inspector" : "Show inspector"}
-          className={cn("rounded-full", inspectorOpen && "bg-surface-raised text-foreground shadow-sm")}
-        >
-          {inspectorOpen ? (
-            <PanelRightClose className="h-5 w-5" aria-hidden="true" />
-          ) : (
-            <PanelRightOpen className="h-5 w-5" aria-hidden="true" />
           )}
         </Button>
 

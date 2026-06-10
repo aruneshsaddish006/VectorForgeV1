@@ -6,6 +6,7 @@ import { Loader2, MessageSquareText, Rocket, PlayCircle } from "lucide-react"
 import { UserMessage, AgentMessage, SystemCardSlot } from "./messages"
 import { Composer } from "./composer"
 import { DecomposerCard, type DecomposerCardData } from "@/components/cards/decomposer-card"
+import { DiscoveryCard, type DiscoveryCardData } from "@/components/cards/discovery-card"
 import { DataSourceCard } from "@/components/cards/data-source-card"
 import { DataUploadCard } from "@/components/cards/data-upload-card"
 import { DataPreviewCard } from "@/components/cards/data-preview-card"
@@ -552,7 +553,7 @@ export function ChatThread({
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div className="scroll-thin min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+        <div className="flex w-full flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
           <section className="app-panel-raised overflow-hidden rounded-[28px] p-6 sm:p-8">
             <div className="min-w-0">
               <p className="text-sm font-semibold text-muted-foreground">
@@ -598,6 +599,16 @@ export function ChatThread({
                   {msg.content}
                   <div className="mt-3">
                     <DecomposerCard cardData={msg.cardData as DecomposerCardData} />
+                  </div>
+                </AgentMessage>
+              )
+            }
+
+            if (msg.cardType === "discovery_summary" && msg.cardData) {
+              return (
+                <AgentMessage key={`live-${i}`} agent={msg.agentName ?? "Discovery Agent"} time={formatTime(msg.timestamp)}>
+                  <div className="mt-1">
+                    <DiscoveryCard cardData={msg.cardData as DiscoveryCardData} />
                   </div>
                 </AgentMessage>
               )
