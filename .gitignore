@@ -77,3 +77,6 @@ build/
 dist/
 .claude/
 .code-review-graph/
+
+
+*/uv.lock
