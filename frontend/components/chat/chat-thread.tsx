@@ -80,7 +80,7 @@ function buildSessionCandidates({
 }
 
 function messageKey(message: ConversationMessage): string {
-  const normalizedContent = message.content.trim().replace(/\s+/g, " ").toLowerCase()
+  const normalizedContent = (message.content ?? "").trim().replace(/\s+/g, " ").toLowerCase()
 
   if (message.role === "user") {
     return ["user", normalizedContent].join("::")
@@ -260,17 +260,19 @@ export function ChatThread({
         try {
           const hydrated = await getConversationState(candidate)
           if (cancelled) return
+          const msgCount = hydrated.messages?.length ?? 0
+          console.log(`[ChatThread] Session hydrated: ${hydrated.sessionId}, messages: ${msgCount}, status: ${hydrated.status}`)
           setSessionId(hydrated.sessionId || candidate)
           setSession(hydrated)
-          setConvStarted(hydrated.messages.length > 0 || Boolean(hydrated.interrupt))
+          setConvStarted(msgCount > 0 || Boolean(hydrated.interrupt))
           return
-        } catch {
-          // Try the next candidate. This covers new use-case scoped sessions,
-          // older project-scoped sessions, and empty workspaces without history.
+        } catch (err) {
+          console.warn(`[ChatThread] Hydration failed for candidate ${candidate}:`, err)
         }
       }
 
       if (!cancelled) {
+        console.info("[ChatThread] No existing session found for any candidate — starting fresh.")
         setSession(null)
         setConvStarted(false)
         setSessionId(primarySessionId)
@@ -404,6 +406,7 @@ export function ChatThread({
         resolve()
       },
       onError(detail: string) {
+        console.error("[ChatThread] Stream error:", detail)
         setStreamingAgent(null)
         reject(new Error(detail))
       },
@@ -453,6 +456,14 @@ export function ChatThread({
     } catch (err) {
       setConvError(err instanceof Error ? err.message : "Something went wrong.")
     } finally {
+      // Always refresh from server so the next interrupt (e.g. problem 2's
+      // dataset_source_choice) surfaces even if the SSE complete event was lost.
+      if (sessionId) {
+        try {
+          const fresh = await getConversationState(sessionId)
+          setSession((prev) => mergeSession(prev, fresh))
+        } catch { /* best-effort: onComplete already set the session */ }
+      }
       setConvLoading(false)
     }
   }
@@ -463,7 +474,9 @@ export function ChatThread({
     setConvLoading(true)
     try {
       await uploadDataset(sessionId, probId, file)
-      setSession(await getConversationState(sessionId))
+      const fresh = await getConversationState(sessionId)
+      setConvStarted(true)
+      setSession((prev) => mergeSession(prev, fresh))
     } catch (err) {
       setConvError(err instanceof Error ? err.message : "Upload failed.")
     } finally {
@@ -537,7 +550,7 @@ export function ChatThread({
   })()
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col">
       <div className="scroll-thin min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
           <section className="app-panel-raised overflow-hidden rounded-[28px] p-6 sm:p-8">
@@ -625,6 +638,16 @@ export function ChatThread({
           {convStarted && !convLoading && session?.interrupt && (() => {
             const { type, message, questions, data, problemId, problemName, engine, acceptedFormats } = session.interrupt
 
+            // Derive step label for multi-problem dataset sourcing phases
+            const allProblems = (confirmedStrategy?.ml_problems ?? []) as Array<{ id?: string; name?: string }>
+            const totalProblems = allProblems.length
+            const currentProblemIdx = totalProblems > 0 && problemId
+              ? allProblems.findIndex((p) => p.id === problemId)
+              : -1
+            const stepLabel = currentProblemIdx >= 0 && totalProblems > 1
+              ? `Dataset sourcing — Problem ${currentProblemIdx + 1} of ${totalProblems}`
+              : null
+
             if (type === "sub_problem_confirmation") {
               return (
                 <SystemCardSlot>
@@ -640,7 +663,10 @@ export function ChatThread({
 
             if (type === "dataset_source_choice") {
               return (
-                <SystemCardSlot>
+                <SystemCardSlot key={`ds-choice-${problemId ?? "unknown"}`}>
+                  {stepLabel && (
+                    <p className="mb-2 px-1 text-xs font-semibold text-muted-foreground">{stepLabel}</p>
+                  )}
                   <DataSourceCard
                     problemName={problemName ?? undefined}
                     acceptedFormats={acceptedFormats ?? undefined}
@@ -658,7 +684,10 @@ export function ChatThread({
             if (type === "schema_confirmation") {
               const preview = data as Record<string, unknown> | null
               return (
-                <SystemCardSlot>
+                <SystemCardSlot key={`schema-${problemId ?? "unknown"}`}>
+                  {stepLabel && (
+                    <p className="mb-2 px-1 text-xs font-semibold text-muted-foreground">{stepLabel}</p>
+                  )}
                   <DataPreviewCard
                     problemName={problemName ?? "Dataset"}
                     engine={(preview?.engine ?? engine) as string | null}

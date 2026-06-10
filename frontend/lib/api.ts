@@ -347,8 +347,8 @@ function normaliseMessage(m: Record<string, unknown>): ConversationMessage {
   return {
     role: m.role as "user" | "agent",
     agentName: (m.agent_name ?? null) as string | null,
-    content: m.content as string,
-    timestamp: m.timestamp as string,
+    content: (m.content ?? "") as string,
+    timestamp: (m.timestamp ?? new Date().toISOString()) as string,
     cardType: (m.card_type ?? null) as string | null,
     cardData: (m.card_data ?? null) as Record<string, unknown> | null,
   }
@@ -437,6 +437,7 @@ export type ConversationStreamProgress = {
  */
 function streamConversationRequest(
   url: string,
+  sessionId: string,
   body: Record<string, unknown>,
   accept: string,
   handlers: StreamHandlers,
@@ -546,6 +547,7 @@ export function streamStartConversation(
 ): () => void {
   return streamConversationRequest(
     `${CONV_API_BASE_URL}/api/v1/conversations/stream`,
+    sessionId,
     { session_id: sessionId, message },
     "text/event-stream",
     handlers,
@@ -559,6 +561,7 @@ export function streamRespondToInterrupt(
 ): () => void {
   return streamConversationRequest(
     `${CONV_API_BASE_URL}/api/v1/conversations/${sessionId}/respond`,
+    sessionId,
     payload,
     "text/event-stream",
     handlers,
