@@ -227,33 +227,60 @@ npm run dev
 
 ---
 
-## Environment Variables
+## Built on the Stack
 
-```bash
-# LLM
-OPENAI_API_KEY=...
-OPENAI_MODEL=gpt-4o-mini                    # optional, default shown
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+Every partner tool does real work in the agent loop.
 
-# Discovery agent
-EXA_API_KEY=...
-
-# Dataset storage
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
-AWS_REGION=us-east-1
-S3_BUCKET_NAME=...
-
-# Conversational state
-REDIS_URL=redis://localhost:6379
-
-# Platform API
-DATABASE_URL=...
-JWT_SECRET=...
-
-# Billing (optional)
-STRIPE_SECRET_KEY=...
-```
+<table>
+<thead>
+<tr>
+<th>Platform</th>
+<th>Role</th>
+<th>What it does in Forge-AI</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><img src="assets/aws.png" height="28" alt="AWS" /></td>
+<td><strong>Infrastructure, training &amp; deployment</strong></td>
+<td>
+  <b>S3</b> — data artifacts &amp; model binaries<br/>
+  <b>ElastiCache</b> — prompt, stream &amp; response caching<br/>
+  <b>SageMaker</b> — train &amp; deploy ML models<br/>
+  <b>ECR</b> — build &amp; push container images<br/>
+  <b>RDS</b> — logs, metadata, audits &amp; users<br/>
+  <b>Bedrock</b> — managed LLM gateway (optional)<br/>
+  <b>EC2 + App Runner</b> — deploy the app &amp; services
+</td>
+</tr>
+<tr>
+<td><img src="assets/exa.png" height="28" alt="Exa" /></td>
+<td><strong>Web intelligence</strong></td>
+<td>
+  <b>Web search</b> — use-case exploration &amp; market sizing<br/>
+  <b>Deep research</b> — live industry benchmarks &amp; ROI data<br/>
+  <b>Exa Agents</b> — public dataset discovery &amp; training data
+</td>
+</tr>
+<tr>
+<td><img src="assets/vercel.png" height="28" alt="Vercel" /></td>
+<td><strong>Product &amp; access</strong></td>
+<td>
+  <b>UI / UX</b> — Next.js front end hosted on Vercel<br/>
+  <b>AI Gateway</b> — unified model access layer<br/>
+  <b>Sandbox</b> — safe EDA &amp; artifact feature code
+</td>
+</tr>
+<tr>
+<td><img src="assets/stripe.png" height="28" alt="Stripe" /></td>
+<td><strong>Monetization</strong></td>
+<td>
+  <b>Billing</b> — usage-based payment management<br/>
+  <b>Subscriptions</b> — recurring revenue &amp; plan tiers
+</td>
+</tr>
+</tbody>
+</table>
 
 ---
 
