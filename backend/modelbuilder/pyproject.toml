@@ -1,7 +1,7 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
-
+ 
 [project]
 name = "vectorforge-v1"
 version = "0.1.0"
@@ -35,10 +35,11 @@ dependencies = [
     "pypdfium2>=5.8.0",
     "PyMuPDF>=1.27.2.3",
     "sentence-transformers>=5.5.1",
+    "transformers>=4.41,<5",
     "tiktoken>=0.13.0",
     "scikit-learn",
 ]
-
+ 
 [project.optional-dependencies]
 sandbox-server = [
     "opensandbox-server>=0.1.14",
@@ -77,11 +78,23 @@ all = [
     "tiktoken>=0.13.0",
     "scikit-learn",
 ]
-
+ 
 [project.scripts]
 vectorforge-v1-trad-ml = "vectorforge_v1.exp_designer.trad_ml.autogluon.__main__:main"
 vectorforge-v1-gen-ai = "vectorforge_v1.exp_designer.gen_ai.autorag.agentic_autorag:main"
 vectorforge-v1-orchestrate = "vectorforge_v1.orchestrator.runner:main"
-
+ 
+[tool.uv]
+# Enumerate every platform this project must install on so uv resolves onnxruntime
+# (pulled in by autogluon + chromadb) to a version that has wheels everywhere.
+# onnxruntime >=1.17 dropped macOS x86_64 wheels, so we must include that target
+# explicitly — without it uv ignores Intel Mac and picks a too-new version.
+required-environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "sys_platform == 'linux' and platform_machine == 'aarch64'",
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "sys_platform == 'darwin' and platform_machine == 'x86_64'",
+]
+ 
 [tool.setuptools.packages.find]
 where = ["src"]

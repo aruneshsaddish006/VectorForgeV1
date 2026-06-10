@@ -90,7 +90,11 @@ def _graph_config(run_id: str) -> dict[str, Any]:
 
 
 def _winner_from_recommendation(run_id: str, store: ArtifactStore) -> dict[str, Any]:
-    rec_path = store.run_dir(run_id) / "reports" / "final_recommendation.json"
+    return _winner_from_recommendation_dir(run_id, store.run_dir(run_id), store)
+
+
+def _winner_from_recommendation_dir(run_id: str, run_dir: Path, store: ArtifactStore) -> dict[str, Any]:
+    rec_path = run_dir / "reports" / "final_recommendation.json"
     if not rec_path.exists():
         raise HTTPException(status_code=404, detail="final_recommendation.json not found — run not completed")
     rec = store.read_json(rec_path)
@@ -103,7 +107,174 @@ def _winner_from_recommendation(run_id: str, store: ArtifactStore) -> dict[str, 
         "model_manifest_path":  rec.get("winning_model_manifest_path"),
         "holdout_metrics_path": rec.get("holdout_metrics_path"),
         "winning_config_yaml_path": rec.get("winning_config_yaml_path"),
-        "corpus_path":          str(store.run_dir(run_id) / "corpus.parquet"),
+        "corpus_path":          str(run_dir / "corpus.parquet"),
+    }
+
+
+def _engine_type_from_problem_result(problem_result: dict[str, Any]) -> str | None:
+    designer = str(problem_result.get("designer", "")).lower()
+    designer_run_id = str(problem_result.get("designer_run_id") or "").lower()
+    if "autorag" in designer or "autorag" in designer_run_id:
+        return "autorag"
+    if "autogluon" in designer or "autogluon" in designer_run_id:
+        return "autogluon_tabular"
+    return None
+
+
+def _engine_type_from_run_dir(run_id: str, run_dir: Path) -> str | None:
+    lowered = f"{run_id} {run_dir}".lower()
+    if "autorag" in lowered:
+        return "autorag"
+    if "autogluon" in lowered:
+        return "autogluon_tabular"
+    return None
+
+
+def _status_from_run_dir(run_dir: Path, store: ArtifactStore) -> dict[str, Any] | None:
+    status_path = run_dir / "status.json"
+    if not status_path.exists():
+        return None
+    try:
+        return store.read_json(status_path)
+    except Exception:
+        return None
+
+
+def _add_artifact_target(
+    targets: list[dict[str, Any]],
+    seen: set[Path],
+    *,
+    requested_id: str,
+    target_run_id: str,
+    run_dir: Path,
+    engine_type: str | None,
+    source: str,
+    store: ArtifactStore,
+) -> None:
+    if not (run_dir / "reports" / "final_recommendation.json").exists():
+        return
+    status = _status_from_run_dir(run_dir, store)
+    if status and status.get("status") != "completed":
+        return
+    resolved = run_dir.resolve()
+    if resolved in seen:
+        return
+    seen.add(resolved)
+    targets.append(
+        {
+            "requested_id": requested_id,
+            "run_id": target_run_id,
+            "run_dir": run_dir,
+            "engine_type": engine_type or _engine_type_from_run_dir(target_run_id, run_dir),
+            "source": source,
+        }
+    )
+
+
+def _artifact_targets_for_id(requested_id: str, store: ArtifactStore) -> list[dict[str, Any]]:
+    targets: list[dict[str, Any]] = []
+    seen: set[Path] = set()
+
+    direct = store.run_dir(requested_id)
+    _add_artifact_target(
+        targets,
+        seen,
+        requested_id=requested_id,
+        target_run_id=requested_id,
+        run_dir=direct,
+        engine_type=None,
+        source="direct_run_dir",
+        store=store,
+    )
+
+    for status_path in sorted(store.runs_dir.rglob("status.json")):
+        status = _status_from_run_dir(status_path.parent, store)
+        if not status or status.get("run_id") != requested_id:
+            continue
+        _add_artifact_target(
+            targets,
+            seen,
+            requested_id=requested_id,
+            target_run_id=requested_id,
+            run_dir=status_path.parent,
+            engine_type=None,
+            source="status_scan",
+            store=store,
+        )
+
+    for summary_path in sorted(store.runs_dir.rglob("orchestrator_summary.json")):
+        try:
+            summary = store.read_json(summary_path)
+        except Exception:
+            continue
+
+        is_requested_orchestrator = (
+            summary.get("run_id") == requested_id
+            or summary.get("session_id") == requested_id
+            or any(parent.name == requested_id for parent in summary_path.parents)
+        )
+
+        for problem_result in summary.get("problem_results", []):
+            designer_run_id = problem_result.get("designer_run_id")
+            designer_run_dir = problem_result.get("designer_run_dir")
+            if not designer_run_id or not designer_run_dir:
+                continue
+            if not is_requested_orchestrator and designer_run_id != requested_id:
+                continue
+            _add_artifact_target(
+                targets,
+                seen,
+                requested_id=requested_id,
+                target_run_id=str(designer_run_id),
+                run_dir=Path(str(designer_run_dir)),
+                engine_type=_engine_type_from_problem_result(problem_result),
+                source="orchestrator_summary",
+                store=store,
+            )
+
+    return targets
+
+
+def _resolve_artifact_target(requested_id: str, store: ArtifactStore, body: dict[str, Any]) -> dict[str, Any]:
+    targets = _artifact_targets_for_id(requested_id, store)
+    if not targets:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No completed designer run with a final recommendation was found for '{requested_id}'.",
+        )
+
+    requested_engine_type = body.get("engine_type")
+    if requested_engine_type:
+        for target in targets:
+            if target.get("engine_type") == requested_engine_type:
+                return target
+        raise HTTPException(
+            status_code=404,
+            detail=f"No completed {requested_engine_type} designer run found for '{requested_id}'.",
+        )
+
+    return targets[0]
+
+
+def _resolve_artifact_target_for_lookup(requested_id: str, store: ArtifactStore) -> dict[str, Any]:
+    targets = _artifact_targets_for_id(requested_id, store)
+    if targets:
+        return targets[0]
+
+    try:
+        store.read_status(requested_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No artifact run found for '{requested_id}'. {exc}",
+        ) from exc
+
+    return {
+        "requested_id": requested_id,
+        "run_id": requested_id,
+        "run_dir": store.run_dir(requested_id),
+        "engine_type": _engine_type_from_run_dir(requested_id, store.run_dir(requested_id)),
+        "source": "direct_status",
     }
 
 
@@ -163,24 +334,28 @@ def trigger_artifact_forge(
       { "engine_type": "autogluon_tabular" | "autorag",
         "winner": { ... override winner fields ... } }
     """
-    _require_status(run_id, {"completed"})
-
     store = ArtifactStore()
     body = body or {}
-    engine_type: str = body.get("engine_type", "autogluon_tabular")
-    winner: dict = body.get("winner") or _winner_from_recommendation(run_id, store)
-    run_dir = str(store.run_dir(run_id))
+    target = _resolve_artifact_target(run_id, store, body)
+    target_run_id = target["run_id"]
+    target_run_dir = target["run_dir"]
+    engine_type: str = body.get("engine_type") or target.get("engine_type") or "autogluon_tabular"
+    winner: dict = body.get("winner") or _winner_from_recommendation_dir(target_run_id, target_run_dir, store)
+    run_dir = str(target_run_dir)
 
-    initial_state = _initial_state(run_id, engine_type, winner, run_dir)
-    background_tasks.add_task(_run_graph_background, run_id, initial_state)
+    initial_state = _initial_state(target_run_id, engine_type, winner, run_dir)
+    background_tasks.add_task(_run_graph_background, target_run_id, initial_state)
 
     return {
-        "run_id": run_id,
-        "job_id": run_id,
+        "requested_id": run_id,
+        "run_id": target_run_id,
+        "job_id": target_run_id,
         "engine_type": engine_type,
+        "run_dir": run_dir,
+        "source": target.get("source"),
         "status": "artifact_generation_started",
-        "stream_url": f"/artifact-forge/runs/{run_id}/stream",
-        "status_url": f"/artifact-forge/runs/{run_id}/status",
+        "stream_url": f"/artifact-forge/runs/{target_run_id}/stream",
+        "status_url": f"/artifact-forge/runs/{target_run_id}/status",
     }
 
 
@@ -193,17 +368,19 @@ def get_artifact_status(run_id: str) -> dict[str, Any]:
     Falls back to status.json fields if the graph hasn't started yet.
     """
     store = ArtifactStore()
-    try:
-        store.read_status(run_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    target = _resolve_artifact_target_for_lookup(run_id, store)
+    requested_id = run_id
+    run_id = target["run_id"]
 
     # Try reading from the live graph checkpoint first
     graph_state = artifact_forge_graph.get_state(_graph_config(run_id))
     if graph_state and graph_state.values:
         values = graph_state.values
         return {
+            "requested_id": requested_id,
             "run_id": run_id,
+            "run_dir": str(target["run_dir"]),
+            "source_id_resolution": target.get("source"),
             "source": "graph_checkpoint",
             "artifact_status":   values.get("artifact_status"),
             "smoke_status":      values.get("smoke_status"),
@@ -215,9 +392,12 @@ def get_artifact_status(run_id: str) -> dict[str, Any]:
         }
 
     # Fallback: read status.json artifact fields
-    status_data = store.read_status(run_id)
+    status_data = store.read_json(Path(target["run_dir"]) / "status.json")
     return {
+        "requested_id": requested_id,
         "run_id": run_id,
+        "run_dir": str(target["run_dir"]),
+        "source_id_resolution": target.get("source"),
         "source": "status_json",
         "artifact_status":   status_data.get("artifact_status"),
         "smoke_status":      status_data.get("artifact_smoke_status"),
@@ -239,12 +419,12 @@ def stream_artifact_events(run_id: str) -> StreamingResponse:
       curl -N http://localhost:8000/artifact-forge/runs/{run_id}/stream
     """
     store = ArtifactStore()
-    try:
-        store.read_status(run_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    target = _resolve_artifact_target_for_lookup(run_id, store)
+    requested_id = run_id
+    run_id = target["run_id"]
 
     def _event_generator():
+        yield f"data: {json.dumps({'type': 'resolved', 'requested_id': requested_id, 'run_id': run_id, 'run_dir': str(target['run_dir']), 'source': target.get('source')})}\n\n"
         try:
             for chunk in artifact_forge_graph.stream(
                 None,                          # resume from checkpoint; input=None
@@ -273,12 +453,10 @@ def stream_artifact_events(run_id: str) -> StreamingResponse:
 def download_artifact(run_id: str) -> FileResponse:
     """Download the sealed artifact zip, generating it on demand if needed."""
     store = ArtifactStore()
-    try:
-        store.read_status(run_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    target = _resolve_artifact_target_for_lookup(run_id, store)
+    run_id = target["run_id"]
 
-    run_dir = store.run_dir(run_id)
+    run_dir = Path(target["run_dir"])
     zip_path = find_artifact_zip_in_run_dir(run_dir)
     if not zip_path:
         try:
@@ -459,20 +637,25 @@ def invoke_artifact_forge(
       { "engine_type": "autogluon_tabular",
         "winner": { ... } }   ← or omit to auto-read from final_recommendation.json
     """
-    _require_status(run_id, {"completed"})
-
     store = ArtifactStore()
     body = body or {}
-    engine_type: str = body.get("engine_type", "autogluon_tabular")
-    winner: dict = body.get("winner") or _winner_from_recommendation(run_id, store)
-    run_dir = str(store.run_dir(run_id))
+    target = _resolve_artifact_target(run_id, store, body)
+    target_run_id = target["run_id"]
+    target_run_dir = target["run_dir"]
+    engine_type: str = body.get("engine_type") or target.get("engine_type") or "autogluon_tabular"
+    winner: dict = body.get("winner") or _winner_from_recommendation_dir(target_run_id, target_run_dir, store)
+    run_dir = str(target_run_dir)
 
-    initial_state = _initial_state(run_id, engine_type, winner, run_dir)
-    result = artifact_forge_graph.invoke(initial_state, _graph_config(run_id), version="v2")
+    initial_state = _initial_state(target_run_id, engine_type, winner, run_dir)
+    result = artifact_forge_graph.invoke(initial_state, _graph_config(target_run_id), version="v2")
 
     values = getattr(result, "value", result) or {}
     return {
-        "run_id":           run_id,
+        "requested_id":     run_id,
+        "run_id":           target_run_id,
+        "engine_type":      engine_type,
+        "run_dir":          run_dir,
+        "source":           target.get("source"),
         "artifact_status":  values.get("artifact_status"),
         "smoke_status":     values.get("smoke_status"),
         "zip_path":         values.get("zip_path"),
