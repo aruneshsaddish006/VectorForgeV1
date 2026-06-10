@@ -8,6 +8,10 @@ export const API_BASE_URL =
 export const CONV_API_BASE_URL =
   process.env.NEXT_PUBLIC_CONV_API_URL?.replace(/\/$/, "") || "http://localhost:8001"
 
+// Model Builder service: orchestration and experiment events (port 8005)
+export const MODEL_API_BASE_URL =
+  process.env.NEXT_PUBLIC_MODEL_API_URL?.replace(/\/$/, "") || "http://localhost:8005"
+
 export async function fetchDemoWorkspace(signal?: AbortSignal): Promise<DemoWorkspace> {
   const response = await fetch(`${API_BASE_URL}/api/demo-workspace`, {
     signal,
@@ -146,6 +150,42 @@ export type ModelRecord = {
   completedAt?: string | null
 }
 
+export type BillingPlan = {
+  id: "free" | "pro" | "enterprise" | string
+  name: string
+  priceMonthly: number
+  summary: string
+  features: string[]
+  limits: Record<string, number | null>
+  checkoutEnabled: boolean
+}
+
+export type BillingUsageItem = {
+  key: string
+  label: string
+  value: number
+  limit: number | null
+  unit: string
+  description: string
+}
+
+export type BillingSummary = {
+  workspaceId: string
+  subscription: {
+    plan: string
+    status: string
+    stripeCustomerId?: string | null
+    stripeSubscriptionId?: string | null
+    currentPeriodStart: string
+    currentPeriodEnd?: string | null
+  }
+  plans: BillingPlan[]
+  usage: {
+    periodSpend: number
+    items: BillingUsageItem[]
+  }
+}
+
 async function parseApiError(response: Response): Promise<string> {
   try {
     const payload = await response.json()
@@ -252,6 +292,150 @@ export function clearAuthSession() {
   window.localStorage.removeItem("forge_ai_workspace")
 }
 
+// ---------------------------------------------------------------------------
+// Model Builder API client
+// ---------------------------------------------------------------------------
+
+export type OrchestratorTriggerResponse = {
+  orch_id: string
+  run_id?: string
+  session_id: string
+  status: string
+  poll_url: string
+  started_at: string
+}
+
+export type OrchestratorRunResponse = {
+  orch_id?: string | null
+  run_id?: string
+  requested_id?: string
+  session_id?: string
+  status?: string
+  source?: string
+  error?: string | null
+  result?: {
+    run_id?: string
+    run_dir?: string
+    status?: string
+    problem_results?: Array<Record<string, unknown>>
+  }
+  problem_results?: Array<Record<string, unknown>>
+  [key: string]: unknown
+}
+
+export type ExperimentResultEvent = {
+  id: string
+  payload: Record<string, unknown>
+}
+
+export type SessionExperimentResultsResponse = {
+  session_id: string
+  cursor: string
+  stream: string
+  events: ExperimentResultEvent[]
+  error: string | null
+}
+
+async function modelFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${MODEL_API_BASE_URL}${path}`, {
+    headers: { Accept: "application/json", ...(init?.headers ?? {}) },
+    ...init,
+  })
+  if (!response.ok) throw new Error(await parseApiError(response))
+  return response.json()
+}
+
+export function triggerTestTrainingWorkflow(sessionId: string): Promise<OrchestratorTriggerResponse> {
+  return modelFetch<OrchestratorTriggerResponse>("/orchestrate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session_id: sessionId,
+      business_problem:
+        "Build a telecom churn prediction model for proactive retention outreach and a research-paper RAG pipeline that answers questions with low hallucination risk and grounded citations.",
+      domain: "telecom_research",
+      constraint_summary:
+        "A telecom churn modeling CSV is available in S3 with churn as the target column. A research paper PDF is also available in S3 for RAG evaluation. The run should exercise both the traditional AutoGluon path and the GenAI AutoRAG path.",
+      ml_problems: [
+        {
+          id: "prob_1",
+          name: "Telecom Churn Prediction",
+          description: "Predict whether a telecom customer will churn using the uploaded churn dataset.",
+          category: "traditional",
+          engine: "autogluon",
+          autogluon_task_type: "binary_classification",
+          hypothesis_evidence: [
+            "The dataset is explicitly prepared for telecom churn prediction.",
+            "The target column is churn, making this a binary classification problem.",
+          ],
+          business_kpis: [
+            "Identify high-risk churn customers for retention outreach",
+            "Improve retention campaign targeting precision",
+          ],
+          dataset: {
+            description: "Telecom churn prediction CSV dataset.",
+            target_column: {
+              inferred_name: "churn",
+              type: "binary",
+              reason: "The user specified churn as the prediction target.",
+            },
+            source: {
+              s3_path: "https://vector-forge-s3.s3.us-west-2.amazonaws.com/datasets/enriched_telecom_churn-2.csv",
+            },
+          },
+        },
+        {
+          id: "prob_2",
+          name: "Research Paper RAG",
+          description: "Build an AutoRAG pipeline that answers questions from research papers while minimizing hallucinations.",
+          category: "genai",
+          engine: "autorag",
+          autogluon_task_type: null,
+          hypothesis_evidence: [
+            "Research papers contain dense technical claims, equations, tables, and figures, so grounded retrieval is critical.",
+            "Low hallucination risk requires strict grounding and evaluation with retrieval precision, retrieval F1, ROUGE, and judge-style generation quality.",
+          ],
+          business_kpis: [
+            "Minimize hallucinated answers",
+            "Prefer answers grounded in retrieved source passages",
+            "Maintain enough retrieval coverage to answer technical questions",
+          ],
+          dataset: {
+            description: "Research paper PDFs with images and tables.",
+            source: {
+              s3_path: "https://vector-forge-s3.s3.us-west-2.amazonaws.com/datasets/1706.03762v7.pdf",
+              row_count: 12,
+            },
+          },
+        },
+      ],
+      session_cost_usd: 0.0,
+      ready_for_experiments: true,
+      max_experiment_per_round: 2,
+      num_round: 2,
+    }),
+  })
+}
+
+export function fetchOrchestratorRun(id: string): Promise<OrchestratorRunResponse> {
+  return modelFetch<OrchestratorRunResponse>(`/orchestrate/${encodeURIComponent(id)}`)
+}
+
+export function fetchSessionExperimentResults(
+  sessionId: string,
+  after = "0-0",
+  options: { count?: number; blockMs?: number } = {},
+): Promise<SessionExperimentResultsResponse> {
+  const params = new URLSearchParams({
+    after,
+    count: String(options.count ?? 100),
+    block_ms: String(options.blockMs ?? 0),
+  })
+  return modelFetch<SessionExperimentResultsResponse>(
+    `/sessions/${encodeURIComponent(sessionId)}/experiment-results?${params.toString()}`,
+  )
+}
+
 export function createWorkspace(payload: { name: string }): Promise<Workspace> {
   return postWithAuth<Workspace>("/api/workspaces", payload)
 }
@@ -322,6 +506,18 @@ export function fetchModels(workspaceId: string, projectId?: string): Promise<Mo
   const params = new URLSearchParams({ workspaceId })
   if (projectId) params.set("projectId", projectId)
   return getWithAuth<ModelRecord[]>(`/api/models?${params.toString()}`)
+}
+
+export function fetchBillingSummary(workspaceId: string): Promise<BillingSummary> {
+  return getWithAuth<BillingSummary>(`/api/billing/summary?workspaceId=${encodeURIComponent(workspaceId)}`)
+}
+
+export function createBillingCheckout(payload: { workspaceId: string; plan: string }): Promise<{ url: string }> {
+  return postWithAuth<{ url: string }>("/api/billing/checkout", payload)
+}
+
+export function createBillingPortal(payload: { workspaceId: string }): Promise<{ url: string }> {
+  return postWithAuth<{ url: string }>("/api/billing/portal", payload)
 }
 
 export async function logoutUser(): Promise<void> {

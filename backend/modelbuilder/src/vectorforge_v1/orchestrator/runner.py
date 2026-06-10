@@ -23,7 +23,7 @@ def run_from_file(request_path: str | Path, work_dir: str | Path = "runs", execu
 
 def run_orchestrator(request: dict[str, Any], work_dir: str | Path = "runs", execute: bool = True) -> dict[str, Any]:
     _load_env_files()
-    run_id = _new_run_id()
+    run_id = str(request.get("_vectorforge_run_id") or _new_run_id())
     session_id = _session_id(request, run_id)
     run_dir = Path(work_dir).resolve() / run_id
     _mkdir(run_dir)

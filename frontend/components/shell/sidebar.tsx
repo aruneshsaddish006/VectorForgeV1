@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import {
-  Activity,
   CloudCog,
   Cpu,
   CreditCard,
@@ -12,10 +11,10 @@ import {
   Lightbulb,
   MessageSquare,
   Network,
-  Plus,
   Settings,
   X,
 } from "lucide-react"
+import { UserMenuButton } from "@/components/shell/user-menu-button"
 import { cn } from "@/lib/utils"
 import {
   createProject,
@@ -46,7 +45,6 @@ const PRIMARY_NAV: NavItem[] = [
 ]
 
 const SECONDARY_NAV: NavItem[] = [
-  { id: "activity", label: "Activity Log", icon: Activity },
   { id: "billing", label: "Billing", icon: CreditCard },
   { id: "settings", label: "Settings", icon: Settings },
 ]
@@ -196,17 +194,6 @@ export function Sidebar({
           </nav>
 
           <div className="mt-2 flex flex-col items-center gap-1.5 border-t border-border/70 pt-2">
-            <button
-              onClick={() => {
-                setError(null)
-                setDialog(selectedWorkspace ? "project" : "workspace")
-              }}
-              className="group relative flex h-9 w-9 items-center justify-center rounded-2xl bg-foreground text-background shadow-sm transition hover:opacity-90"
-              aria-label={selectedWorkspace ? "Create project" : "Create workspace"}
-            >
-              <Plus className="h-5 w-5" aria-hidden="true" />
-              <TooltipLabel>{selectedWorkspace ? "Create project" : "Create workspace"}</TooltipLabel>
-            </button>
             {SECONDARY_NAV.map((item) => (
               <NavButton
                 key={item.id}
@@ -215,6 +202,7 @@ export function Sidebar({
                 onClick={() => onViewChange(item.id)}
               />
             ))}
+            <UserMenuButton />
           </div>
         </div>
       </aside>
