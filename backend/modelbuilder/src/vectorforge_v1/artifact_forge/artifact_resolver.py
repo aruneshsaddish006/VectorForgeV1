@@ -91,12 +91,33 @@ def _winner_from_recommendation(
     }
 
 
+def _rebase_to_runs(raw_path: Any) -> Path | None:
+    """Strip any machine-specific prefix and rebase from the 'runs' folder anchor.
+
+    Handles paths like /Users/arusaddi1/.../runs/orch_.../... by finding the
+    'runs' segment and re-rooting under Path.cwd() / 'runs'.
+    """
+    if not raw_path:
+        return None
+    parts = Path(str(raw_path)).parts
+    for i, part in enumerate(parts):
+        if part == "runs":
+            rebased = Path.cwd() / Path(*parts[i:])
+            if rebased.exists():
+                return rebased
+    return None
+
+
 def _resolve_path(run_dir: Path, raw_path: Any) -> str | None:
     if not raw_path:
         return None
     path = Path(str(raw_path)).expanduser()
     if path.exists():
         return str(path)
+
+    rebased = _rebase_to_runs(raw_path)
+    if rebased:
+        return str(rebased)
 
     candidates = [
         run_dir / path,

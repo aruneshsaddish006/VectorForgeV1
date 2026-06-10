@@ -171,6 +171,19 @@ def _add_artifact_target(
     )
 
 
+def _rebase_path(path: Path, runs_dir: Path) -> Path:
+    """Strip any machine-specific prefix and rebase from the 'runs' folder anchor."""
+    if path.exists():
+        return path
+    parts = path.parts
+    for i, part in enumerate(parts):
+        if part == "runs":
+            rebased = runs_dir / Path(*parts[i + 1:])
+            if rebased.exists():
+                return rebased
+    return path
+
+
 def _artifact_targets_for_id(requested_id: str, store: ArtifactStore) -> list[dict[str, Any]]:
     targets: list[dict[str, Any]] = []
     seen: set[Path] = set()
@@ -221,12 +234,13 @@ def _artifact_targets_for_id(requested_id: str, store: ArtifactStore) -> list[di
                 continue
             if not is_requested_orchestrator and designer_run_id != requested_id:
                 continue
+            run_dir = _rebase_path(Path(str(designer_run_dir)), store.runs_dir)
             _add_artifact_target(
                 targets,
                 seen,
                 requested_id=requested_id,
                 target_run_id=str(designer_run_id),
-                run_dir=Path(str(designer_run_dir)),
+                run_dir=run_dir,
                 engine_type=_engine_type_from_problem_result(problem_result),
                 source="orchestrator_summary",
                 store=store,
